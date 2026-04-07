@@ -3,29 +3,11 @@ import type { MetricDefinition, SparePartSubItem } from './types';
 // ========== Business Parameters ==========
 export const HOURLY_RATE = 113;
 export const OFFLINE_INTERVENTION_UNIT_COST = 246;
-export const ONLINE_INTERVENTION_MULTIPLIERS = [13, 0.56];
+
 export const TECH_RENOVATION_2025_RATES: Record<string, number> = {
   PS2: 20.92,
   PS3: 26.92,
   PS4: 18.99,
-};
-export const BOLT_STANDARD_HOURS = 2.3;
-export const REFLUX_BATTERY_STANDARD_HOURS = 1.8;
-export const EXTERNAL_GEAR_STANDARD_HOURS = 1.8;
-
-export const INSPECTION_MINUTES: Record<string, number> = {
-  gen2_weekly: 6.5,
-  gen2_monthly: 6.5,
-  gen2_bimonthly: 55,
-  gen2_semi_annual: 180,
-  gen3_weekly: 10,
-  gen3_monthly: 10,
-  gen3_bimonthly: 26.5,
-  gen3_semi_annual: 212,
-  gen4_weekly: 9,
-  gen4_monthly: 9,
-  gen4_bimonthly: 39,
-  gen4_semi_annual: 58.5,
 };
 
 export const DEFAULT_SPARE_PART_SUB_ITEMS: SparePartSubItem[] = [
@@ -65,11 +47,16 @@ export const FORMULA_TYPE_LABELS: Record<string, string> = {
   hours_times_rate: '工时 × 时薪',
   subtraction: '直接汇总',
   checkbox_sum: '多字段勾选求和',
-  hardcoded: '维度映射均摊',
-  regex_extract: '正则提取',
+  hardcoded: '按站型固定费率均摊',
 };
 
 // ========== Metric Definitions ==========
+// count_times_unit: COUNT(满足筛选条件的记录) × unit_cost
+// hours_times_rate: SUM(记录[value_field]) × hourly_rate
+// subtraction: 直接汇总金额字段
+// checkbox_sum: 多字段勾选求和（子项目可配置）
+// hardcoded: 按站型固定日费率 × 30天
+
 export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
   // === 人力成本 ===
   {
@@ -82,12 +69,11 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
       table_name: 'ue_power_auto_swap_mobile_duty_worksheet_info_1d_f',
       warehouse_layer: 'dwd',
       filter_conditions: "worksheet_status = '处理完成'",
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'update_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'update_time' },
     },
     formula: {
       type: 'count_times_unit',
       unit_cost: 246,
-      unit_label: 'RMB/单',
       raw_value_name: '工单数',
       raw_value_unit: '单',
       description: '按站按月统计已完成工单数 × 246元/单',
@@ -103,15 +89,14 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
       table_name: 'ue_power_occ_event_worksheet_1d_f',
       warehouse_layer: 'dwm',
       filter_conditions: "role = 'LOCC' AND state_name IN ('处理完成','关闭','已处理','已关闭','已确认','已确诊','已完成','申请确认')",
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'update_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'update_time' },
     },
     formula: {
       type: 'count_times_unit',
-      multipliers: [13, 0.56],
-      unit_label: 'RMB/事件',
+      unit_cost: 7.28, // pre-calculated: 13 × 0.56 = 7.28
       raw_value_name: '事件数',
       raw_value_unit: '次',
-      description: '按站按月统计LOCC角色的已完成事件数 × 13 × 0.56 = 7.28元/单',
+      description: '按站按月统计LOCC角色的已完成事件数 × 7.28元/次',
     },
   },
   {
@@ -133,12 +118,12 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'workflow_new_oss_powerswap_maintenance_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'hours_times_rate',
       hourly_rate: 113,
-      unit_label: 'RMB/h',
+      value_field: 'actual_working_hours',
       raw_value_name: '工时数',
       raw_value_unit: '小时',
       description: '按站按月汇总实际处理工时 × 113元/小时',
@@ -154,7 +139,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'ue_power_swap_maintenance_cost_daily_summary_1d_f',
       warehouse_layer: 'dws',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'dt', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'dt' },
     },
     formula: {
       type: 'checkbox_sum',
@@ -175,15 +160,15 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
       table_name: 'workflow_wcsprdwhlkmwpwog_1h_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
       filter_conditions: "status IN ('已完成', '审核中')",
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'hours_times_rate',
       hourly_rate: 113,
-      unit_label: 'RMB/h',
+      value_field: 'standard_working_hours',
       raw_value_name: '工时数',
       raw_value_unit: '小时',
-      description: '从task_description正则提取标准工时(H/min)，按站按月汇总 × 113元/小时',
+      description: '从task_description提取标准工时，按站按月汇总 × 113元/小时',
     },
   },
   {
@@ -206,7 +191,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
       table_name: 'pp_lmp_worksheet_buffer_1d_i',
       warehouse_layer: 'dwm',
       filter_conditions: "device_type = 'powerswap'",
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'subtraction',
@@ -224,13 +209,11 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: '硬编码均摊值',
       warehouse_layer: '-',
-      dimension_mapping: { station_field: '', time_field: '', station_model_field: 'station_model', region_field: '' },
+      dimension_mapping: { station_field: '', time_field: '' },
     },
     formula: {
       type: 'hardcoded',
       hardcoded_rates: { PS2: 20.92, PS3: 26.92, PS4: 18.99 },
-      raw_value_name: '站点',
-      raw_value_unit: '站',
       description: 'PS2: 20.92元/站/天; PS3: 26.92元/站/天; PS4: 18.99元/站/天',
     },
   },
@@ -243,16 +226,14 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'workflow_qljssfnppdxqjspo_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'count_times_unit',
-      standard_hours: 2.3,
-      hourly_rate: 113,
-      unit_label: 'RMB',
+      unit_cost: 259.9, // 2.3h × 113元/h = 259.9
       raw_value_name: '工单数',
       raw_value_unit: '单',
-      description: '工单数 × 2.3小时/单 × 113元/小时',
+      description: '工单数 × 259.9元/单（2.3小时/单 × 113元/小时）',
     },
   },
   {
@@ -264,16 +245,14 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'workflow_ecegbgqhxgzteasz_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'count_times_unit',
-      standard_hours: 2.3,
-      hourly_rate: 113,
-      unit_label: 'RMB',
+      unit_cost: 259.9,
       raw_value_name: '工单数',
       raw_value_unit: '单',
-      description: '工单数 × 2.3小时/单 × 113元/小时',
+      description: '工单数 × 259.9元/单（2.3小时/单 × 113元/小时）',
     },
   },
   {
@@ -285,16 +264,14 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'workflow_battery_bolt_fault_handling_worksheet_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'count_times_unit',
-      standard_hours: 1.8,
-      hourly_rate: 113,
-      unit_label: 'RMB',
+      unit_cost: 203.4, // 1.8h × 113元/h
       raw_value_name: '工单数',
       raw_value_unit: '单',
-      description: '工单数 × 1.8小时/单(标准0.5h+路途1.3h) × 113元/小时',
+      description: '工单数 × 203.4元/单（1.8小时/单 × 113元/小时）',
     },
   },
   {
@@ -306,16 +283,14 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'workflow_ubqwfwidmehdoevx_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'count_times_unit',
-      standard_hours: 1.8,
-      hourly_rate: 113,
-      unit_label: 'RMB',
+      unit_cost: 203.4,
       raw_value_name: '工单数',
       raw_value_unit: '单',
-      description: '工单数 × 1.8小时/单 × 113元/小时',
+      description: '工单数 × 203.4元/单（1.8小时/单 × 113元/小时）',
     },
   },
   {
@@ -327,16 +302,14 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'workflow_check_external_ring_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' },
     },
     formula: {
       type: 'count_times_unit',
-      standard_hours: 1.8,
-      hourly_rate: 113,
-      unit_label: 'RMB',
+      unit_cost: 203.4,
       raw_value_name: '工单数',
       raw_value_unit: '单',
-      description: '工单数 × 1.8小时/单 × 113元/小时',
+      description: '工单数 × 203.4元/单（1.8小时/单 × 113元/小时）',
     },
   },
   // === 事故费用 ===
@@ -350,7 +323,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
       table_name: 'workflow_hyiuozqrcknbwwfz_1d_a',
       warehouse_layer: 'ods_pe_es_sec2_prod',
       filter_conditions: "accident_resp = '1'",
-      dimension_mapping: { station_field: 'swap_station_id', time_field: 'accident_time', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'swap_station_id', time_field: 'accident_time' },
     },
     formula: {
       type: 'subtraction',
@@ -368,7 +341,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     data_source: {
       table_name: 'ue_power_feishu_data_swap_station_battery_damage_list_1d_f',
       warehouse_layer: 'ods',
-      dimension_mapping: { station_field: 'station_name', time_field: 'damage_date', station_model_field: '', region_field: '' },
+      dimension_mapping: { station_field: 'station_name', time_field: 'damage_date' },
     },
     formula: {
       type: 'subtraction',
@@ -403,74 +376,74 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     id: 'inspection_gen2_weekly', name_zh: '二代周检', category: 'inspection',
     field_name: 'gen2_swap_station_weekly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_fxvhkowqucftdohg_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 6.5, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 6.5min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 12.24, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 12.24元/单（6.5min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen2_monthly', name_zh: '二代月检', category: 'inspection',
     field_name: 'gen2_swap_station_monthly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_sqbykuamldpwrjpm_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 6.5, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 6.5min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 12.24, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 12.24元/单（6.5min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen2_bimonthly', name_zh: '二代双月检', category: 'inspection',
     field_name: 'gen2_swap_station_bimonthly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_swap_check_two_generation_special_manintenance_new_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 55, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 55min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 103.58, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 103.58元/单（55min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen2_semi_annual', name_zh: '二代半年检', category: 'inspection',
     field_name: 'gen2_swap_station_semi_annual_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_grviahrpanlgvyzonew_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 180, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 180min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 339, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 339元/单（180min/60 × 113元/小时）' },
   },
   // Inspection items - gen3
   {
     id: 'inspection_gen3_weekly', name_zh: '三代周检', category: 'inspection',
     field_name: 'gen3_swap_station_weekly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_nsadfpkxdflnynex_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 10, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 10min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 18.83, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 18.83元/单（10min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen3_monthly', name_zh: '三代月检', category: 'inspection',
     field_name: 'gen3_swap_station_monthly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_piockciagtevqcxb_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 10, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 10min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 18.83, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 18.83元/单（10min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen3_bimonthly', name_zh: '三代双月检', category: 'inspection',
     field_name: 'gen3_swap_station_bimonthly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_ahzajwwdaecgdhka_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 26.5, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 26.5min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 49.91, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 49.91元/单（26.5min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen3_semi_annual', name_zh: '三代半年检', category: 'inspection',
     field_name: 'gen3_swap_station_semi_annual_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_ncrejxzrtboizpodnew_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 212, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 212min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 399.27, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 399.27元/单（212min/60 × 113元/小时）' },
   },
   // Inspection items - gen4
   {
     id: 'inspection_gen4_weekly', name_zh: '四代周检', category: 'inspection',
     field_name: 'gen4_swap_station_weekly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_oxtcuvqygcdmfjvh_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 9, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 9min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 16.95, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 16.95元/单（9min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen4_monthly', name_zh: '四代月检', category: 'inspection',
     field_name: 'gen4_swap_station_monthly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_akkdcuflnypvjalk_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 9, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 9min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 16.95, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 16.95元/单（9min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen4_bimonthly', name_zh: '四代双月检', category: 'inspection',
     field_name: 'gen4_swap_station_bimonthly_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_odcucisufbyyyhfw_1h_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 39, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 39min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 73.45, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 73.45元/单（39min/60 × 113元/小时）' },
   },
   {
     id: 'inspection_gen4_semi_annual', name_zh: '四代半年检', category: 'inspection',
     field_name: 'gen4_swap_station_semi_annual_inspection_count', status: 'active',
     data_source: { table_name: 'workflow_rehazvvqwemaofea_1d_a', warehouse_layer: 'ods_pe_es_sec2_prod', dimension_mapping: { station_field: 'swap_station_id', time_field: 'create_time' } },
-    formula: { type: 'count_times_unit', standard_minutes: 58.5, hourly_rate: 113, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 58.5min/60 × 113元/小时' },
+    formula: { type: 'count_times_unit', unit_cost: 110.18, raw_value_name: '工单数', raw_value_unit: '单', description: '工单数 × 110.18元/单（58.5min/60 × 113元/小时）' },
   },
 ];

@@ -325,22 +325,6 @@ const DashboardPage: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Top 10 stations */}
-      <Card title="换电站成本 TOP 10" size="small" style={{ marginBottom: 16 }}>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={topStations} layout="vertical" margin={{ left: 100 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" tickFormatter={(v) => formatNumber(v)} style={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" style={{ fontSize: 11 }} width={100} />
-            <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-            <Legend />
-            {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
-              <Bar key={cat} dataKey={cat} name={label} stackId="a" fill={CATEGORY_COLORS[cat]} />
-            ))}
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-
       {/* New charts for the boss */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         {/* Station type cost comparison */}
@@ -401,6 +385,22 @@ const DashboardPage: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* Top 10 stations */}
+      <Card title="换电站成本 TOP 10" size="small" style={{ marginBottom: 16 }}>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={topStations} layout="vertical" margin={{ left: 100 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis type="number" tickFormatter={(v) => formatNumber(v)} style={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey="name" style={{ fontSize: 11 }} width={100} />
+            <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+            <Legend />
+            {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
+              <Bar key={cat} dataKey={cat} name={label} stackId="a" fill={CATEGORY_COLORS[cat]} />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </Card>
     </div>
   );
 };

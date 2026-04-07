@@ -66,10 +66,15 @@ function deepCloneMetrics(metrics: MetricDefinition[]): MetricDefinition[] {
     formula: {
       ...m.formula,
       sub_items: m.formula.sub_items?.map((s) => ({ ...s })),
-      multipliers: m.formula.multipliers ? [...m.formula.multipliers] : undefined,
       hardcoded_rates: m.formula.hardcoded_rates ? { ...m.formula.hardcoded_rates } : undefined,
     },
-    data_source: m.data_source ? { ...m.data_source, dimension_mapping: { ...m.data_source.dimension_mapping } } : null,
+    data_source: m.data_source ? {
+      ...m.data_source,
+      dimension_mapping: {
+        station_field: m.data_source.dimension_mapping.station_field,
+        time_field: m.data_source.dimension_mapping.time_field,
+      },
+    } : null,
   }));
 }
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Row, Col, Collapse, List, Tag, Card, InputNumber, Form, Switch, Typography, Empty, Alert, Space, message, Button, Modal, Input, Select, Popconfirm, Divider } from 'antd';
-import { LockOutlined, ExclamationCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { LockOutlined, ExclamationCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, EditOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useQualityCost } from '../../context/QualityCostContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, FORMULA_TYPE_LABELS, WAREHOUSE_LAYERS } from '../../data/constants';
 import type { MetricDefinition, SparePartSubItem, FormulaType, DataSourceConfig } from '../../data/types';
@@ -8,12 +8,10 @@ import { formatMetricStatus } from '../../utils/formatters';
 
 const { Text, Paragraph } = Typography;
 
-// Formula type options derived from FORMULA_TYPE_LABELS
 const FORMULA_TYPE_OPTIONS: { label: string; value: FormulaType }[] = (
   Object.entries(FORMULA_TYPE_LABELS) as [FormulaType, string][]
 ).map(([value, label]) => ({ label, value }));
 
-// Group metrics by category
 function groupByCategory(metrics: MetricDefinition[]): Record<string, MetricDefinition[]> {
   const groups: Record<string, MetricDefinition[]> = {};
   for (const m of metrics) {
@@ -21,6 +19,8 @@ function groupByCategory(metrics: MetricDefinition[]): Record<string, MetricDefi
   }
   return groups;
 }
+
+// ==================== Main Page ====================
 
 const MetricsPage: React.FC = () => {
   const { metricDefinitions, updateMetricDefinition, addMetricDefinition, deleteMetricDefinition, tableSchemas } = useQualityCost();
@@ -122,7 +122,6 @@ const MetricsPage: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Add Metric Modal */}
       <AddMetricModal
         open={showAddModal}
         tableSchemas={tableSchemas}
@@ -135,7 +134,6 @@ const MetricsPage: React.FC = () => {
         }}
       />
 
-      {/* Edit Basic Info Modal - key ensures re-mount when selected metric changes */}
       {selectedMetric && (
         <EditBasicInfoModal
           key={selectedMetric.id}
@@ -154,7 +152,19 @@ const MetricsPage: React.FC = () => {
   );
 };
 
-// === Metric Config Panel (right side) ===
+// ==================== Formula Preview ====================
+
+function FormulaPreview({ formula }: { formula: string }) {
+  return (
+    <div style={{ background: '#f6f8fa', padding: '8px 12px', borderRadius: 4, marginTop: 8, border: '1px solid #e8e8e8' }}>
+      <Text type="secondary" style={{ fontSize: 12 }}>计算公式: </Text>
+      <Text code style={{ fontSize: 13 }}>{formula}</Text>
+    </div>
+  );
+}
+
+// ==================== Metric Config Panel (right side) ====================
+
 function MetricConfigPanel({
   metric,
   onUpdate,
@@ -167,7 +177,7 @@ function MetricConfigPanel({
   onEditBasicInfo: () => void;
 }) {
   const [messageApi, contextHolder] = message.useMessage();
-  void tableSchemas; // available for future use
+  void tableSchemas;
 
   if (metric.status === 'not_configured') {
     return (
@@ -215,6 +225,38 @@ function MetricConfigPanel({
 
   const formulaTypeLabel = FORMULA_TYPE_LABELS[formula.type] || formula.type;
 
+  // Sub-items management for checkbox_sum
+  const handleAddSubItem = () => {
+    const currentItems = formula.sub_items || [];
+    const newItem: SparePartSubItem = {
+      key: `field_${Date.now()}`,
+      label_zh: '新子项',
+      enabled: true,
+      coefficient: 1,
+    };
+    handleSave('sub_items', [...currentItems, newItem]);
+  };
+
+  const handleDeleteSubItem = (key: string) => {
+    const currentItems = formula.sub_items || [];
+    handleSave('sub_items', currentItems.filter((item) => item.key !== key));
+  };
+
+  const handleToggleSubItem = (key: string, enabled: boolean) => {
+    const currentItems = formula.sub_items || [];
+    handleSave('sub_items', currentItems.map((item) => (item.key === key ? { ...item, enabled } : item)));
+  };
+
+  const handleSubItemCoefficient = (key: string, coefficient: number) => {
+    const currentItems = formula.sub_items || [];
+    handleSave('sub_items', currentItems.map((item) => (item.key === key ? { ...item, coefficient } : item)));
+  };
+
+  const handleSubItemField = (key: string, field: 'key' | 'label_zh', value: string) => {
+    const currentItems = formula.sub_items || [];
+    handleSave('sub_items', currentItems.map((item) => (item.key === key ? { ...item, [field]: value } : item)));
+  };
+
   return (
     <Card
       title={
@@ -229,7 +271,8 @@ function MetricConfigPanel({
       extra={<Button size="small" icon={<EditOutlined />} onClick={onEditBasicInfo}>编辑基本信息</Button>}
     >
       {contextHolder}
-      {/* Data source info */}
+
+      {/* Data source card */}
       {metric.data_source && (
         <Card type="inner" title="数据源" size="small" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -260,189 +303,222 @@ function MetricConfigPanel({
                   <Text type="secondary" style={{ fontSize: 11 }}>时间字段: </Text>
                   <Text code style={{ fontSize: 11 }}>{metric.data_source.dimension_mapping.time_field || '-'}</Text>
                 </div>
-                <div>
-                  <Text type="secondary" style={{ fontSize: 11 }}>站型字段: </Text>
-                  <Text code style={{ fontSize: 11 }}>{metric.data_source.dimension_mapping.station_model_field || '-'}</Text>
-                </div>
-                <div>
-                  <Text type="secondary" style={{ fontSize: 11 }}>区域字段: </Text>
-                  <Text code style={{ fontSize: 11 }}>{metric.data_source.dimension_mapping.region_field || '-'}</Text>
-                </div>
               </div>
             </div>
           )}
         </Card>
       )}
 
-      {/* Formula configuration */}
+      {/* Formula configuration card */}
       <Card type="inner" title={`计算公式配置 - ${formulaTypeLabel}`} size="small" style={{ marginBottom: 16 }}>
         <Paragraph type="secondary" style={{ marginBottom: 16 }}>
           {formula.description}
         </Paragraph>
 
-        {/* raw_value_name and raw_value_unit editable fields */}
-        <Form layout="vertical" size="small" style={{ marginBottom: 16 }}>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="原始值名称 (raw_value_name)">
-                <Input
-                  value={formula.raw_value_name || ''}
-                  onChange={(e) => handleSave('raw_value_name', e.target.value)}
-                  placeholder="例: 工单数、事件数、工时数"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label="原始值单位 (raw_value_unit)">
-                <Input
-                  value={formula.raw_value_unit || ''}
-                  onChange={(e) => handleSave('raw_value_unit', e.target.value)}
-                  placeholder="例: 单、次、小时"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-
-        {/* count_times_unit with unit_cost */}
-        {formula.type === 'count_times_unit' && formula.unit_cost != null && (
+        {/* count_times_unit */}
+        {formula.type === 'count_times_unit' && (
           <Form layout="vertical" size="small">
-            <Form.Item label="单个工单成本 (RMB/单)">
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="原始值名称 (raw_value_name)">
+                  <Input
+                    value={formula.raw_value_name || ''}
+                    onChange={(e) => handleSave('raw_value_name', e.target.value)}
+                    placeholder="例: 工单数、事件数"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="原始值单位 (raw_value_unit)">
+                  <Input
+                    value={formula.raw_value_unit || ''}
+                    onChange={(e) => handleSave('raw_value_unit', e.target.value)}
+                    placeholder="例: 单、次"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item label="单价 (unit_cost)">
               <InputNumber
-                value={formula.unit_cost}
+                value={formula.unit_cost ?? 0}
                 min={0}
                 step={1}
-                style={{ width: 200 }}
+                style={{ width: 240 }}
                 onChange={(v) => v != null && handleSave('unit_cost', v)}
-                addonAfter={formula.unit_label || 'RMB/单'}
+                addonAfter={`元/${rawValueUnit || '次'}`}
               />
             </Form.Item>
-            <FormulaPreview formula={`${rawValueName} x ${formula.unit_cost} = 成本`} />
-          </Form>
-        )}
-
-        {/* count_times_unit with multipliers */}
-        {formula.type === 'count_times_unit' && formula.multipliers && formula.multipliers.length > 0 && (
-          <Form layout="vertical" size="small">
-            {formula.multipliers.map((m, i) => (
-              <Form.Item label={`乘数 ${i + 1}`} key={i}>
-                <InputNumber
-                  value={m}
-                  min={0}
-                  step={0.01}
-                  style={{ width: 200 }}
-                  onChange={(v) => {
-                    if (v != null) {
-                      const newMultipliers = [...formula.multipliers!];
-                      newMultipliers[i] = v;
-                      handleSave('multipliers', newMultipliers);
-                    }
-                  }}
-                />
-              </Form.Item>
-            ))}
-            <FormulaPreview
-              formula={`${rawValueName} x ${formula.multipliers.join(' x ')} = ${formula.multipliers.reduce((a, b) => a * b, 1).toFixed(2)} RMB/${rawValueUnit || '次'}`}
-            />
-          </Form>
-        )}
-
-        {/* count_times_unit with standard_hours */}
-        {formula.type === 'count_times_unit' && formula.standard_hours != null && (
-          <Form layout="vertical" size="small">
-            <Form.Item label="标准工时 (小时/单)">
-              <InputNumber
-                value={formula.standard_hours}
-                min={0}
-                step={0.1}
-                style={{ width: 200 }}
-                onChange={(v) => v != null && handleSave('standard_hours', v)}
-                addonAfter="小时/单"
-              />
-            </Form.Item>
-            <Form.Item label="工时单价 (RMB/h)">
-              <InputNumber
-                value={formula.hourly_rate}
-                min={0}
-                step={1}
-                style={{ width: 200 }}
-                onChange={(v) => v != null && handleSave('hourly_rate', v)}
-                addonAfter="RMB/h"
-              />
-            </Form.Item>
-            <FormulaPreview
-              formula={`${rawValueName} x ${formula.standard_hours}h x ${formula.hourly_rate} RMB/h = 成本`}
-            />
-          </Form>
-        )}
-
-        {/* count_times_unit with standard_minutes (inspection) */}
-        {formula.type === 'count_times_unit' && formula.standard_minutes != null && (
-          <Form layout="vertical" size="small">
-            <Form.Item label="标准工时 (分钟/单)">
-              <InputNumber
-                value={formula.standard_minutes}
-                min={0}
-                step={0.5}
-                style={{ width: 200 }}
-                onChange={(v) => v != null && handleSave('standard_minutes', v)}
-                addonAfter="分钟/单"
-              />
-            </Form.Item>
-            <Form.Item label="工时单价 (RMB/h)">
-              <InputNumber
-                value={formula.hourly_rate}
-                min={0}
-                step={1}
-                style={{ width: 200 }}
-                onChange={(v) => v != null && handleSave('hourly_rate', v)}
-                addonAfter="RMB/h"
-              />
-            </Form.Item>
-            <FormulaPreview
-              formula={`${rawValueName} x ${formula.standard_minutes}min/60 x ${formula.hourly_rate} RMB/h = 成本`}
-            />
+            <FormulaPreview formula={`${rawValueName} × ${formula.unit_cost ?? 0} = 成本（元/${rawValueUnit || '次'}）`} />
           </Form>
         )}
 
         {/* hours_times_rate */}
         {formula.type === 'hours_times_rate' && (
           <Form layout="vertical" size="small">
-            <Form.Item label="工时单价 (RMB/h)">
-              <InputNumber
-                value={formula.hourly_rate}
-                min={0}
-                step={1}
-                style={{ width: 200 }}
-                onChange={(v) => v != null && handleSave('hourly_rate', v)}
-                addonAfter="RMB/h"
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="原始值名称 (raw_value_name)">
+                  <Input
+                    value={formula.raw_value_name || ''}
+                    onChange={(e) => handleSave('raw_value_name', e.target.value)}
+                    placeholder="例: 工时数"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="原始值单位 (raw_value_unit)">
+                  <Input
+                    value={formula.raw_value_unit || ''}
+                    onChange={(e) => handleSave('raw_value_unit', e.target.value)}
+                    placeholder="例: 小时"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item label="工时字段名 (value_field)">
+              <Input
+                value={formula.value_field || ''}
+                onChange={(e) => handleSave('value_field', e.target.value)}
+                placeholder="数据源中的工时字段名"
               />
             </Form.Item>
-            <FormulaPreview formula={`${rawValueName} x ${formula.hourly_rate} RMB/h = 成本`} />
+            <Form.Item label="时薪 (hourly_rate)">
+              <InputNumber
+                value={formula.hourly_rate ?? 0}
+                min={0}
+                step={1}
+                style={{ width: 240 }}
+                onChange={(v) => v != null && handleSave('hourly_rate', v)}
+                addonAfter={`元/${rawValueUnit || '小时'}`}
+              />
+            </Form.Item>
+            <FormulaPreview formula={`SUM(${formula.value_field || 'value_field'}) × ${formula.hourly_rate ?? 0} = 成本（元/${rawValueUnit || '小时'}）`} />
           </Form>
         )}
 
-        {/* checkbox_sum (spare parts) */}
-        {formula.type === 'checkbox_sum' && formula.sub_items && (
-          <SparePartsConfig
-            subItems={formula.sub_items}
-            onChange={(items) => handleSave('sub_items', items)}
-          />
+        {/* subtraction */}
+        {formula.type === 'subtraction' && (
+          <Form layout="vertical" size="small">
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="原始值名称 (raw_value_name)">
+                  <Input
+                    value={formula.raw_value_name || ''}
+                    onChange={(e) => handleSave('raw_value_name', e.target.value)}
+                    placeholder="例: 费用"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="原始值单位 (raw_value_unit)">
+                  <Input
+                    value={formula.raw_value_unit || ''}
+                    onChange={(e) => handleSave('raw_value_unit', e.target.value)}
+                    placeholder="例: 元"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Alert message="该指标直接从数据源汇总金额，无需额外参数配置" type="info" showIcon />
+          </Form>
+        )}
+
+        {/* checkbox_sum */}
+        {formula.type === 'checkbox_sum' && (
+          <Form layout="vertical" size="small">
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="原始值名称 (raw_value_name)">
+                  <Input
+                    value={formula.raw_value_name || ''}
+                    onChange={(e) => handleSave('raw_value_name', e.target.value)}
+                    placeholder="例: 物料成本"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="原始值单位 (raw_value_unit)">
+                  <Input
+                    value={formula.raw_value_unit || ''}
+                    onChange={(e) => handleSave('raw_value_unit', e.target.value)}
+                    placeholder="例: 元"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Text type="secondary" style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
+              选择纳入计算的子项，并设置系数（默认为1）:
+            </Text>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(formula.sub_items || []).map((item) => (
+                <div
+                  key={item.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '6px 12px',
+                    background: item.enabled ? '#f6ffed' : '#fafafa',
+                    borderRadius: 4,
+                    border: `1px solid ${item.enabled ? '#b7eb8f' : '#e8e8e8'}`,
+                  }}
+                >
+                  <Switch size="small" checked={item.enabled} onChange={(v) => handleToggleSubItem(item.key, v)} />
+                  <Input
+                    size="small"
+                    value={item.label_zh}
+                    onChange={(e) => handleSubItemField(item.key, 'label_zh', e.target.value)}
+                    style={{ width: 120, opacity: item.enabled ? 1 : 0.5 }}
+                  />
+                  <Text code style={{ fontSize: 11, opacity: item.enabled ? 1 : 0.5 }}>{item.key}</Text>
+                  <InputNumber
+                    size="small"
+                    value={item.coefficient}
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    style={{ width: 100 }}
+                    onChange={(v) => v != null && handleSubItemCoefficient(item.key, v)}
+                    disabled={!item.enabled}
+                    addonBefore="x"
+                  />
+                  <Popconfirm title="确认删除此子项？" onConfirm={() => handleDeleteSubItem(item.key)}>
+                    <Button size="small" type="text" danger icon={<MinusCircleOutlined />} />
+                  </Popconfirm>
+                </div>
+              ))}
+            </div>
+            <Button
+              type="dashed"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={handleAddSubItem}
+              style={{ marginTop: 12, width: '100%' }}
+            >
+              添加子项
+            </Button>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                已选 {(formula.sub_items || []).filter((i) => i.enabled).length}/{(formula.sub_items || []).length} 项
+              </Text>
+            </div>
+          </Form>
         )}
 
         {/* hardcoded */}
-        {formula.type === 'hardcoded' && formula.hardcoded_rates && (
+        {formula.type === 'hardcoded' && (
           <Form layout="vertical" size="small">
-            {Object.entries(formula.hardcoded_rates).map(([model, rate]) => (
-              <Form.Item label={`${model} 每日均摊值 (元/站/天)`} key={model}>
+            {(['PS2', 'PS3', 'PS4'] as const).map((model) => (
+              <Form.Item label={`${model} 每日均摊值`} key={model}>
                 <InputNumber
-                  value={rate}
+                  value={formula.hardcoded_rates?.[model] ?? 0}
                   min={0}
                   step={0.01}
-                  style={{ width: 200 }}
+                  style={{ width: 240 }}
                   onChange={(v) => {
                     if (v != null) {
-                      const newRates = { ...formula.hardcoded_rates!, [model]: v };
+                      const newRates = { ...formula.hardcoded_rates, [model]: v };
                       handleSave('hardcoded_rates', newRates);
                     }
                   }}
@@ -450,29 +526,7 @@ function MetricConfigPanel({
                 />
               </Form.Item>
             ))}
-            <FormulaPreview formula="每日均摊值 x 30天 = 月度成本" />
-          </Form>
-        )}
-
-        {/* subtraction */}
-        {formula.type === 'subtraction' && (
-          <Alert message="该指标直接从数据源汇总金额，无需额外参数配置" type="info" showIcon />
-        )}
-
-        {/* count_times_unit with no specific sub-type (generic new metrics) */}
-        {formula.type === 'count_times_unit' && formula.unit_cost == null && !formula.multipliers?.length && formula.standard_hours == null && formula.standard_minutes == null && (
-          <Form layout="vertical" size="small">
-            <Alert message="该指标使用计数x单价公式，请设置单价参数" type="info" showIcon style={{ marginBottom: 12 }} />
-            <Form.Item label="单价 (元/次)">
-              <InputNumber
-                value={0}
-                min={0}
-                step={1}
-                style={{ width: 200 }}
-                onChange={(v) => v != null && handleSave('unit_cost', v)}
-                addonAfter="元/次"
-              />
-            </Form.Item>
+            <FormulaPreview formula="每日均摊值 × 30天 = 月度成本（元/站/月）" />
           </Form>
         )}
       </Card>
@@ -480,77 +534,8 @@ function MetricConfigPanel({
   );
 }
 
-// Formula preview component
-function FormulaPreview({ formula }: { formula: string }) {
-  return (
-    <div style={{ background: '#f6f8fa', padding: '8px 12px', borderRadius: 4, marginTop: 8, border: '1px solid #e8e8e8' }}>
-      <Text type="secondary" style={{ fontSize: 12 }}>计算公式: </Text>
-      <Text code style={{ fontSize: 13 }}>{formula}</Text>
-    </div>
-  );
-}
+// ==================== Add Metric Modal ====================
 
-// Spare parts checkbox config
-function SparePartsConfig({
-  subItems,
-  onChange,
-}: {
-  subItems: SparePartSubItem[];
-  onChange: (items: SparePartSubItem[]) => void;
-}) {
-  const handleToggle = (key: string, enabled: boolean) => {
-    onChange(subItems.map((item) => (item.key === key ? { ...item, enabled } : item)));
-  };
-
-  const handleCoefficient = (key: string, coefficient: number) => {
-    onChange(subItems.map((item) => (item.key === key ? { ...item, coefficient } : item)));
-  };
-
-  return (
-    <div>
-      <Text type="secondary" style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
-        选择纳入计算的备件子项，并设置系数（默认为1）:
-      </Text>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {subItems.map((item) => (
-          <div
-            key={item.key}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '6px 12px',
-              background: item.enabled ? '#f6ffed' : '#fafafa',
-              borderRadius: 4,
-              border: `1px solid ${item.enabled ? '#b7eb8f' : '#e8e8e8'}`,
-            }}
-          >
-            <Switch size="small" checked={item.enabled} onChange={(v) => handleToggle(item.key, v)} />
-            <Text style={{ flex: 1, opacity: item.enabled ? 1 : 0.5 }}>{item.label_zh}</Text>
-            <InputNumber
-              size="small"
-              value={item.coefficient}
-              min={0}
-              max={10}
-              step={0.1}
-              style={{ width: 100 }}
-              onChange={(v) => v != null && handleCoefficient(item.key, v)}
-              disabled={!item.enabled}
-              addonBefore="x"
-            />
-          </div>
-        ))}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          已选 {subItems.filter((i) => i.enabled).length}/{subItems.length} 项
-        </Text>
-      </div>
-    </div>
-  );
-}
-
-// === Add Metric Modal ===
 function AddMetricModal({
   open,
   tableSchemas,
@@ -569,20 +554,16 @@ function AddMetricModal({
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
-      const dsTable = values.ds_table;
-      const dsWarehouseLayer = values.ds_warehouse_layer;
 
       let dataSource: DataSourceConfig | null = null;
-      if (dsTable) {
+      if (values.ds_table) {
         dataSource = {
-          table_name: dsTable,
-          warehouse_layer: dsWarehouseLayer || '',
+          table_name: values.ds_table,
+          warehouse_layer: values.ds_warehouse_layer || '',
           filter_conditions: values.ds_filter || undefined,
           dimension_mapping: {
             station_field: values.dim_station_field || '',
             time_field: values.dim_time_field || '',
-            station_model_field: values.dim_station_model_field || '',
-            region_field: values.dim_region_field || '',
           },
         };
       } else {
@@ -592,32 +573,35 @@ function AddMetricModal({
       const formulaConfig: Record<string, unknown> = {
         type: values.formula_type,
         description: values.formula_description || '',
-        raw_value_name: values.raw_value_name || '',
-        raw_value_unit: values.raw_value_unit || '',
       };
 
-      // Set defaults based on formula type
-      switch (values.formula_type) {
+      switch (values.formula_type as FormulaType) {
         case 'count_times_unit':
-          if (values.param_mode === 'unit_cost') {
-            formulaConfig.unit_cost = values.unit_cost || 0;
-            formulaConfig.unit_label = 'RMB/单';
-          } else if (values.param_mode === 'standard_hours') {
-            formulaConfig.standard_hours = values.standard_hours || 1;
-            formulaConfig.hourly_rate = values.hourly_rate || 113;
-          } else if (values.param_mode === 'standard_minutes') {
-            formulaConfig.standard_minutes = values.standard_minutes || 10;
-            formulaConfig.hourly_rate = values.hourly_rate || 113;
-          }
+          formulaConfig.unit_cost = values.unit_cost || 0;
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'hours_times_rate':
           formulaConfig.hourly_rate = values.hourly_rate || 113;
+          formulaConfig.value_field = values.value_field || '';
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
-        case 'hardcoded':
-          formulaConfig.hardcoded_rates = { PS2: values.rate_ps2 || 0, PS3: values.rate_ps3 || 0, PS4: values.rate_ps4 || 0 };
+        case 'subtraction':
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'checkbox_sum':
           formulaConfig.sub_items = [];
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
+          break;
+        case 'hardcoded':
+          formulaConfig.hardcoded_rates = {
+            PS2: values.rate_ps2 || 0,
+            PS3: values.rate_ps3 || 0,
+            PS4: values.rate_ps4 || 0,
+          };
           break;
       }
 
@@ -658,7 +642,6 @@ function AddMetricModal({
         initialValues={{
           category: 'labor',
           formula_type: 'count_times_unit',
-          param_mode: 'unit_cost',
           hourly_rate: 113,
         }}
       >
@@ -682,21 +665,11 @@ function AddMetricModal({
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="raw_value_name" label="原始值名称">
-              <Input placeholder="例: 工单数、事件数" />
+            <Form.Item name="description" label="说明">
+              <Input placeholder="指标说明（可选）" />
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="raw_value_unit" label="原始值单位">
-              <Input placeholder="例: 单、次、小时" />
-            </Form.Item>
-          </Col>
-        </Row>
-        <Form.Item name="description" label="说明">
-          <Input.TextArea placeholder="指标说明（可选）" rows={2} />
-        </Form.Item>
 
         <Divider plain>数据源配置</Divider>
         <Row gutter={16}>
@@ -736,18 +709,6 @@ function AddMetricModal({
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="dim_station_model_field" label="站型字段">
-              <Input placeholder="station_model（可选）" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="dim_region_field" label="区域字段">
-              <Input placeholder="region（可选）" />
-            </Form.Item>
-          </Col>
-        </Row>
 
         <Divider plain>计算公式</Divider>
         <Form.Item name="formula_type" label="计算方式" rules={[{ required: true }]}>
@@ -757,77 +718,102 @@ function AddMetricModal({
           <Input placeholder="公式的文字描述" />
         </Form.Item>
 
-        {/* Dynamic params based on formula type */}
+        {/* count_times_unit params */}
         {formulaType === 'count_times_unit' && (
           <>
-            <Form.Item name="param_mode" label="计算方式">
-              <Select options={[
-                { label: '计数 x 单价', value: 'unit_cost' },
-                { label: '计数 x 标准工时(h) x 时薪', value: 'standard_hours' },
-                { label: '计数 x 标准工时(min) x 时薪', value: 'standard_minutes' },
-              ]} />
-            </Form.Item>
-            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.param_mode !== cur.param_mode}>
-              {({ getFieldValue }) => {
-                const mode = getFieldValue('param_mode');
-                if (mode === 'unit_cost') {
-                  return (
-                    <Form.Item name="unit_cost" label="单价 (元/单)">
-                      <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/单" />
-                    </Form.Item>
-                  );
-                }
-                if (mode === 'standard_hours') {
-                  return (
-                    <Space direction="vertical">
-                      <Form.Item name="standard_hours" label="标准工时 (小时/单)">
-                        <InputNumber min={0} step={0.1} style={{ width: 200 }} addonAfter="小时/单" />
-                      </Form.Item>
-                      <Form.Item name="hourly_rate" label="时薪 (元/h)">
-                        <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/h" />
-                      </Form.Item>
-                    </Space>
-                  );
-                }
-                if (mode === 'standard_minutes') {
-                  return (
-                    <Space direction="vertical">
-                      <Form.Item name="standard_minutes" label="标准工时 (分钟/单)">
-                        <InputNumber min={0} step={0.5} style={{ width: 200 }} addonAfter="分钟/单" />
-                      </Form.Item>
-                      <Form.Item name="hourly_rate" label="时薪 (元/h)">
-                        <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/h" />
-                      </Form.Item>
-                    </Space>
-                  );
-                }
-                return null;
-              }}
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 工单数、事件数" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 单、次" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="unit_cost" label="单价 (元/次)">
+              <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/次" />
             </Form.Item>
           </>
         )}
 
+        {/* hours_times_rate params */}
         {formulaType === 'hours_times_rate' && (
-          <Form.Item name="hourly_rate" label="时薪 (元/h)">
-            <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/h" />
-          </Form.Item>
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 工时数" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 小时" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="value_field" label="工时字段名">
+              <Input placeholder="数据源中的工时字段名" />
+            </Form.Item>
+            <Form.Item name="hourly_rate" label="时薪 (元/小时)">
+              <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/小时" />
+            </Form.Item>
+          </>
         )}
 
+        {/* subtraction params */}
+        {formulaType === 'subtraction' && (
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="raw_value_name" label="原始值名称">
+                <Input placeholder="例: 费用" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="raw_value_unit" label="原始值单位">
+                <Input placeholder="例: 元" />
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+
+        {/* checkbox_sum params */}
+        {formulaType === 'checkbox_sum' && (
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 物料成本" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 元" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Alert message="子项配置请在创建后通过右侧配置面板管理" type="info" showIcon />
+          </>
+        )}
+
+        {/* hardcoded params */}
         {formulaType === 'hardcoded' && (
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="rate_ps2" label="PS2 (元/站/天)">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元/站/天" />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="rate_ps3" label="PS3 (元/站/天)">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元/站/天" />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="rate_ps4" label="PS4 (元/站/天)">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元/站/天" />
               </Form.Item>
             </Col>
           </Row>
@@ -837,7 +823,8 @@ function AddMetricModal({
   );
 }
 
-// === Edit Basic Info Modal ===
+// ==================== Edit Basic Info Modal ====================
+
 function EditBasicInfoModal({
   open,
   metric,
@@ -864,7 +851,6 @@ function EditBasicInfoModal({
         description: values.description,
       };
 
-      // Update data source if provided
       if (values.ds_table) {
         updates.data_source = {
           table_name: values.ds_table,
@@ -873,43 +859,42 @@ function EditBasicInfoModal({
           dimension_mapping: {
             station_field: values.dim_station_field || '',
             time_field: values.dim_time_field || '',
-            station_model_field: values.dim_station_model_field || '',
-            region_field: values.dim_region_field || '',
           },
         };
       }
 
-      // Build formula config from form values
       const formulaConfig: Record<string, unknown> = {
         type: values.formula_type,
         description: values.formula_description || metric.formula.description || '',
-        raw_value_name: values.raw_value_name || '',
-        raw_value_unit: values.raw_value_unit || '',
       };
 
-      switch (values.formula_type) {
+      switch (values.formula_type as FormulaType) {
         case 'count_times_unit':
-          if (values.param_mode === 'unit_cost') {
-            formulaConfig.unit_cost = values.unit_cost ?? metric.formula.unit_cost ?? 0;
-            formulaConfig.unit_label = metric.formula.unit_label || 'RMB/单';
-          } else if (values.param_mode === 'standard_hours') {
-            formulaConfig.standard_hours = values.standard_hours ?? metric.formula.standard_hours ?? 1;
-            formulaConfig.hourly_rate = values.hourly_rate ?? metric.formula.hourly_rate ?? 113;
-          } else if (values.param_mode === 'standard_minutes') {
-            formulaConfig.standard_minutes = values.standard_minutes ?? metric.formula.standard_minutes ?? 10;
-            formulaConfig.hourly_rate = values.hourly_rate ?? metric.formula.hourly_rate ?? 113;
-          } else if (values.param_mode === 'multipliers') {
-            formulaConfig.multipliers = metric.formula.multipliers || [];
-          }
+          formulaConfig.unit_cost = values.unit_cost ?? metric.formula.unit_cost ?? 0;
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'hours_times_rate':
           formulaConfig.hourly_rate = values.hourly_rate ?? metric.formula.hourly_rate ?? 113;
+          formulaConfig.value_field = values.value_field ?? metric.formula.value_field ?? '';
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
-        case 'hardcoded':
-          formulaConfig.hardcoded_rates = metric.formula.hardcoded_rates || { PS2: 0, PS3: 0, PS4: 0 };
+        case 'subtraction':
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'checkbox_sum':
           formulaConfig.sub_items = metric.formula.sub_items || [];
+          formulaConfig.raw_value_name = values.raw_value_name || '';
+          formulaConfig.raw_value_unit = values.raw_value_unit || '';
+          break;
+        case 'hardcoded':
+          formulaConfig.hardcoded_rates = {
+            PS2: values.rate_ps2 ?? metric.formula.hardcoded_rates?.PS2 ?? 0,
+            PS3: values.rate_ps3 ?? metric.formula.hardcoded_rates?.PS3 ?? 0,
+            PS4: values.rate_ps4 ?? metric.formula.hardcoded_rates?.PS4 ?? 0,
+          };
           break;
       }
 
@@ -920,16 +905,6 @@ function EditBasicInfoModal({
     } catch {
       // validation error
     }
-  };
-
-  // Determine param_mode from current metric formula
-  const getInitialParamMode = () => {
-    const f = metric.formula;
-    if (f.type !== 'count_times_unit') return 'unit_cost';
-    if (f.standard_minutes != null) return 'standard_minutes';
-    if (f.standard_hours != null) return 'standard_hours';
-    if (f.multipliers && f.multipliers.length > 0) return 'multipliers';
-    return 'unit_cost';
   };
 
   return (
@@ -959,15 +934,14 @@ function EditBasicInfoModal({
           ds_filter: metric.data_source?.filter_conditions,
           dim_station_field: metric.data_source?.dimension_mapping?.station_field,
           dim_time_field: metric.data_source?.dimension_mapping?.time_field,
-          dim_station_model_field: metric.data_source?.dimension_mapping?.station_model_field,
-          dim_region_field: metric.data_source?.dimension_mapping?.region_field,
           formula_type: metric.formula.type,
           formula_description: metric.formula.description,
-          param_mode: getInitialParamMode(),
           unit_cost: metric.formula.unit_cost,
-          standard_hours: metric.formula.standard_hours,
-          standard_minutes: metric.formula.standard_minutes,
           hourly_rate: metric.formula.hourly_rate ?? 113,
+          value_field: metric.formula.value_field || '',
+          rate_ps2: metric.formula.hardcoded_rates?.PS2,
+          rate_ps3: metric.formula.hardcoded_rates?.PS3,
+          rate_ps4: metric.formula.hardcoded_rates?.PS4,
         }}
       >
         <Divider plain>基本信息</Divider>
@@ -990,21 +964,11 @@ function EditBasicInfoModal({
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="raw_value_name" label="原始值名称">
-              <Input placeholder="例: 工单数、事件数" />
+            <Form.Item name="description" label="说明">
+              <Input />
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="raw_value_unit" label="原始值单位">
-              <Input placeholder="例: 单、次、小时" />
-            </Form.Item>
-          </Col>
-        </Row>
-        <Form.Item name="description" label="说明">
-          <Input.TextArea rows={2} />
-        </Form.Item>
 
         <Divider plain>数据源</Divider>
         <Row gutter={16}>
@@ -1042,18 +1006,6 @@ function EditBasicInfoModal({
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="dim_station_model_field" label="站型字段">
-              <Input placeholder="station_model（可选）" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="dim_region_field" label="区域字段">
-              <Input placeholder="region（可选）" />
-            </Form.Item>
-          </Col>
-        </Row>
 
         <Divider plain>计算公式</Divider>
         <Form.Item name="formula_type" label="计算方式" rules={[{ required: true }]}>
@@ -1063,77 +1015,102 @@ function EditBasicInfoModal({
           <Input placeholder="公式的文字描述" />
         </Form.Item>
 
-        {/* Dynamic params based on formula type */}
+        {/* count_times_unit */}
         {formulaType === 'count_times_unit' && (
           <>
-            <Form.Item name="param_mode" label="计算方式">
-              <Select options={[
-                { label: '计数 x 单价', value: 'unit_cost' },
-                { label: '计数 x 标准工时(h) x 时薪', value: 'standard_hours' },
-                { label: '计数 x 标准工时(min) x 时薪', value: 'standard_minutes' },
-              ]} />
-            </Form.Item>
-            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.param_mode !== cur.param_mode}>
-              {({ getFieldValue }) => {
-                const mode = getFieldValue('param_mode');
-                if (mode === 'unit_cost') {
-                  return (
-                    <Form.Item name="unit_cost" label="单价 (元/单)">
-                      <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/单" />
-                    </Form.Item>
-                  );
-                }
-                if (mode === 'standard_hours') {
-                  return (
-                    <Space direction="vertical">
-                      <Form.Item name="standard_hours" label="标准工时 (小时/单)">
-                        <InputNumber min={0} step={0.1} style={{ width: 200 }} addonAfter="小时/单" />
-                      </Form.Item>
-                      <Form.Item name="hourly_rate" label="时薪 (元/h)">
-                        <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/h" />
-                      </Form.Item>
-                    </Space>
-                  );
-                }
-                if (mode === 'standard_minutes') {
-                  return (
-                    <Space direction="vertical">
-                      <Form.Item name="standard_minutes" label="标准工时 (分钟/单)">
-                        <InputNumber min={0} step={0.5} style={{ width: 200 }} addonAfter="分钟/单" />
-                      </Form.Item>
-                      <Form.Item name="hourly_rate" label="时薪 (元/h)">
-                        <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/h" />
-                      </Form.Item>
-                    </Space>
-                  );
-                }
-                return null;
-              }}
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 工单数、事件数" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 单、次" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="unit_cost" label="单价 (元/次)">
+              <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/次" />
             </Form.Item>
           </>
         )}
 
+        {/* hours_times_rate */}
         {formulaType === 'hours_times_rate' && (
-          <Form.Item name="hourly_rate" label="时薪 (元/h)">
-            <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/h" />
-          </Form.Item>
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 工时数" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 小时" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="value_field" label="工时字段名">
+              <Input placeholder="数据源中的工时字段名" />
+            </Form.Item>
+            <Form.Item name="hourly_rate" label="时薪 (元/小时)">
+              <InputNumber min={0} step={1} style={{ width: 200 }} addonAfter="元/小时" />
+            </Form.Item>
+          </>
         )}
 
+        {/* subtraction */}
+        {formulaType === 'subtraction' && (
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="raw_value_name" label="原始值名称">
+                <Input placeholder="例: 费用" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="raw_value_unit" label="原始值单位">
+                <Input placeholder="例: 元" />
+              </Form.Item>
+            </Col>
+          </Row>
+        )}
+
+        {/* checkbox_sum */}
+        {formulaType === 'checkbox_sum' && (
+          <>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 物料成本" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 元" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Alert message="子项配置请在保存后通过右侧配置面板管理" type="info" showIcon />
+          </>
+        )}
+
+        {/* hardcoded */}
         {formulaType === 'hardcoded' && (
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="rate_ps2" label="PS2 (元/站/天)">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元/站/天" />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="rate_ps3" label="PS3 (元/站/天)">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元/站/天" />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item name="rate_ps4" label="PS4 (元/站/天)">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="元/站/天" />
               </Form.Item>
             </Col>
           </Row>

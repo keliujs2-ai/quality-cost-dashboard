@@ -229,21 +229,8 @@ export function calculateCost(
   switch (formula.type) {
     case 'count_times_unit':
       if (formula.unit_cost != null) {
-        // Simple: rawValue * unit_cost
+        // rawValue * unit_cost
         return Math.round(rawValue * formula.unit_cost * 100) / 100;
-      }
-      if (formula.multipliers && formula.multipliers.length > 0) {
-        // rawValue * product of multipliers
-        const product = formula.multipliers.reduce((acc, m) => acc * m, 1);
-        return Math.round(rawValue * product * 100) / 100;
-      }
-      if (formula.standard_hours != null && formula.hourly_rate != null) {
-        // rawValue * standard_hours * hourly_rate
-        return Math.round(rawValue * formula.standard_hours * formula.hourly_rate * 100) / 100;
-      }
-      if (formula.standard_minutes != null && formula.hourly_rate != null) {
-        // rawValue * (standard_minutes / 60) * hourly_rate
-        return Math.round(rawValue * (formula.standard_minutes / 60) * formula.hourly_rate * 100) / 100;
       }
       return rawValue;
 
@@ -268,13 +255,6 @@ export function calculateCost(
         return Math.round(dailyRate * 30 * 100) / 100;
       }
       return 0;
-
-    case 'regex_extract':
-      // Treated as hours_times_rate after extraction
-      if (formula.hourly_rate != null) {
-        return Math.round(rawValue * formula.hourly_rate * 100) / 100;
-      }
-      return rawValue;
 
     default:
       return rawValue;
@@ -304,15 +284,11 @@ function generateMonths(start: string, end: string): string[] {
 
 // ========== Get unit label for a metric ==========
 function getUnitLabel(metric: MetricDefinition): string {
-  if (metric.formula.unit_label) return metric.formula.unit_label;
-
   switch (metric.formula.type) {
     case 'count_times_unit':
-      if (metric.formula.standard_minutes != null) return '次';
-      if (metric.formula.standard_hours != null) return '单';
-      return '次';
+      return metric.formula.raw_value_unit ? `元/${metric.formula.raw_value_unit}` : '元/次';
     case 'hours_times_rate':
-      return '小时';
+      return metric.formula.raw_value_unit ? `元/${metric.formula.raw_value_unit}` : '元/小时';
     case 'subtraction':
     case 'checkbox_sum':
       return '元';
@@ -342,14 +318,6 @@ function generateGenericRawValue(
   // Generate based on formula type
   switch (metric.formula.type) {
     case 'count_times_unit':
-      if (metric.formula.standard_minutes != null) {
-        // inspection-like: 1-5 per month
-        return Math.round((1 + rng() * 4) * scale * seasonal * variation);
-      }
-      if (metric.formula.standard_hours != null) {
-        // work-order-like: 2-10 per month
-        return Math.round((2 + rng() * 8) * scale * seasonal * variation);
-      }
       // count * unit_cost: 5-30 per month
       return Math.round((5 + rng() * 25) * scale * seasonal * variation);
 

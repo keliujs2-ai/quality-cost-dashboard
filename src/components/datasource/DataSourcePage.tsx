@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Row, Col, Tree, Card, Table, Tag, Badge, Typography, Empty, Alert, Descriptions, Input, Button, Modal, Form, Select, Space, Popconfirm, message } from 'antd';
-import { DatabaseOutlined, TableOutlined, CheckCircleOutlined, ExclamationCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined, LinkOutlined } from '@ant-design/icons';
+import { Row, Col, Tree, Card, Table, Tag, Typography, Empty, Alert, Descriptions, Input, Button, Modal, Form, Select, Space, Popconfirm, message } from 'antd';
+import { DatabaseOutlined, TableOutlined, ExclamationCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined, LinkOutlined } from '@ant-design/icons';
 import { useQualityCost } from '../../context/QualityCostContext';
 import type { TableSchema, ColumnSchema } from '../../data/types';
 
@@ -10,8 +10,6 @@ const { Search } = Input;
 const DIMENSION_LABELS: Record<string, string> = {
   station_field: '站点',
   time_field: '时间',
-  station_model_field: '站型',
-  region_field: '区域',
 };
 
 const DataSourcePage: React.FC = () => {
@@ -171,10 +169,7 @@ const DataSourcePage: React.FC = () => {
           {selectedTable ? (
             <Card
               title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Text strong>{selectedTable.warehouse_layer}.{selectedTable.table_name}</Text>
-                  <Badge status="success" text="已连接" />
-                </div>
+                <Text strong>{selectedTable.warehouse_layer}.{selectedTable.table_name}</Text>
               }
               size="small"
               style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}
@@ -202,9 +197,6 @@ const DataSourcePage: React.FC = () => {
                 <Descriptions.Item label="表名">{selectedTable.table_name}</Descriptions.Item>
                 <Descriptions.Item label="业务描述" span={2}>{selectedTable.description}</Descriptions.Item>
                 <Descriptions.Item label="字段数">{selectedTable.columns.length}</Descriptions.Item>
-                <Descriptions.Item label="连接状态">
-                  <Tag icon={<CheckCircleOutlined />} color="success">已连接</Tag>
-                </Descriptions.Item>
               </Descriptions>
 
               <Title level={5}>字段列表</Title>

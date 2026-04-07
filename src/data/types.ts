@@ -18,43 +18,38 @@ export type FormulaType =
   | 'hours_times_rate'
   | 'subtraction'
   | 'checkbox_sum'
-  | 'hardcoded'
-  | 'regex_extract';
+  | 'hardcoded';
 
 export interface SparePartSubItem {
-  key: string;
-  label_zh: string;
+  key: string;        // field name in data source
+  label_zh: string;   // display name
   enabled: boolean;
   coefficient: number;
 }
 
 export interface FormulaConfig {
   type: FormulaType;
-  unit_cost?: number;
-  unit_label?: string;
-  hourly_rate?: number;
-  standard_hours?: number;
-  standard_minutes?: number;
-  multipliers?: number[];
-  sub_items?: SparePartSubItem[];
-  hardcoded_rates?: Record<string, number>;
+  unit_cost?: number;         // for count_times_unit: cost per count
+  hourly_rate?: number;       // for hours_times_rate: cost per hour
+  value_field?: string;       // for hours_times_rate: which field to sum
+  sub_items?: SparePartSubItem[];  // for checkbox_sum: configurable sub-items
+  hardcoded_rates?: Record<string, number>;  // for hardcoded: rates per station model
   description?: string;
-  // New: structured raw value naming for formula preview
+  // Structured raw value naming (not used by hardcoded type)
   raw_value_name?: string;  // e.g. "工单数", "事件数", "工时数"
   raw_value_unit?: string;  // e.g. "单", "次", "小时"
 }
 
 // Dimension mapping: maps data source fields to standard dimensions
+// Station model and region are always derived from station master table via station_field
 export interface DimensionMapping {
-  station_field?: string;       // field name for station ID, e.g. "swap_station_id"
-  time_field?: string;          // field name for time, e.g. "dt" or "create_time"
-  station_model_field?: string; // field name for station model, e.g. "station_model"
-  region_field?: string;        // field name for region, e.g. "region"
+  station_field?: string;  // field name for station ID, e.g. "swap_station_id"
+  time_field?: string;     // field name for time, e.g. "dt" or "create_time"
 }
 
 export interface DataSourceConfig {
   table_name: string;
-  warehouse_layer: string; // was "database", now "数仓层级" (dwd/dwm/dws/ods/dim)
+  warehouse_layer: string; // 数仓层级 (dwd/dwm/dws/ods/dim)
   filter_conditions?: string;
   dimension_mapping: DimensionMapping;
 }
@@ -113,16 +108,16 @@ export interface PredictionResult {
 
 export interface TableSchema {
   table_name: string;
-  warehouse_layer: string; // was "database", now "数仓层级"
-  description: string;     // "业务描述"
+  warehouse_layer: string;
+  description: string;
   columns: ColumnSchema[];
 }
 
 export interface ColumnSchema {
   name: string;
   type: string;
-  description: string;  // "业务描述"
-  remark: string;        // was "sample_value", now "备注"
+  description: string;
+  remark: string;
 }
 
 export interface FilterState {
