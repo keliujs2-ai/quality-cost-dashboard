@@ -1,11 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { Row, Col, Tree, Card, Table, Tag, Badge, Typography, Empty, Alert, Descriptions, Input, Button, Modal, Form, Select, Space, Popconfirm, message } from 'antd';
-import { DatabaseOutlined, TableOutlined, CheckCircleOutlined, ExclamationCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, TableOutlined, CheckCircleOutlined, ExclamationCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined, LinkOutlined } from '@ant-design/icons';
 import { useQualityCost } from '../../context/QualityCostContext';
 import type { TableSchema, ColumnSchema } from '../../data/types';
 
 const { Text, Title } = Typography;
 const { Search } = Input;
+
+const DIMENSION_LABELS: Record<string, string> = {
+  station_field: '站点',
+  time_field: '时间',
+  station_model_field: '站型',
+  region_field: '区域',
+};
 
 const DataSourcePage: React.FC = () => {
   const { metricDefinitions, tableSchemas, addTableSchema, updateTableSchema, deleteTableSchema } = useQualityCost();
@@ -15,50 +22,81 @@ const DataSourcePage: React.FC = () => {
   const [editingTable, setEditingTable] = useState<TableSchema | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
 
-  // Build tree data from context
+  // Build tree data grouped by warehouse_layer
   const treeData = useMemo(() => {
     const groups = new Map<string, TableSchema[]>();
     for (const schema of tableSchemas) {
-      const list = groups.get(schema.database) || [];
+      const list = groups.get(schema.warehouse_layer) || [];
       list.push(schema);
-      groups.set(schema.database, list);
+      groups.set(schema.warehouse_layer, list);
     }
-    return Array.from(groups.entries()).map(([db, tables]) => ({
-      title: db,
-      key: db,
-      icon: <DatabaseOutlined />,
-      children: tables.map((t) => ({
-        title: t.table_name,
-        key: `${t.database}.${t.table_name}`,
-        icon: <TableOutlined />,
-        isLeaf: true,
-      })),
-    }));
-  }, [tableSchemas]);
+
+    const filtered = Array.from(groups.entries()).map(([layer, tables]) => {
+      const filteredTables = searchText
+        ? tables.filter((t) => t.table_name.toLowerCase().includes(searchText.toLowerCase()))
+        : tables;
+      return {
+        title: layer,
+        key: layer,
+        icon: <DatabaseOutlined />,
+        children: filteredTables.map((t) => ({
+          title: t.table_name,
+          key: `${t.warehouse_layer}.${t.table_name}`,
+          icon: <TableOutlined />,
+          isLeaf: true,
+        })),
+      };
+    });
+
+    // Hide empty groups when searching
+    return searchText ? filtered.filter((g) => g.children.length > 0) : filtered;
+  }, [tableSchemas, searchText]);
 
   const selectedTable = useMemo(() => {
     if (!selectedTableKey) return null;
-    return tableSchemas.find((s) => `${s.database}.${s.table_name}` === selectedTableKey) || null;
+    return tableSchemas.find((s) => `${s.warehouse_layer}.${s.table_name}` === selectedTableKey) || null;
   }, [selectedTableKey, tableSchemas]);
 
   const handleSelect = (keys: React.Key[]) => {
     if (keys.length === 0) return;
-    setSelectedTableKey(keys[0] as string);
+    const key = keys[0] as string;
+    // Only select leaf nodes (table entries), not group nodes
+    if (key.includes('.')) {
+      setSelectedTableKey(key);
+    }
   };
 
   // Find metrics using this table
-  const linkedMetrics = selectedTable
-    ? metricDefinitions.filter(
-        (m) => m.data_source && m.data_source.table_name.includes(selectedTable.table_name),
-      )
-    : [];
+  const linkedMetrics = useMemo(() => {
+    if (!selectedTable) return [];
+    return metricDefinitions.filter(
+      (m) => m.data_source && m.data_source.table_name === selectedTable.table_name,
+    );
+  }, [selectedTable, metricDefinitions]);
+
+  // Build dimension mapping info: which metrics map which fields for which dimensions
+  const dimensionMappingInfo = useMemo(() => {
+    if (!selectedTable) return [];
+    const result: { metricName: string; dimension: string; fieldName: string }[] = [];
+    for (const m of linkedMetrics) {
+      if (!m.data_source?.dimension_mapping) continue;
+      const mapping = m.data_source.dimension_mapping;
+      for (const [dimKey, label] of Object.entries(DIMENSION_LABELS)) {
+        const fieldValue = (mapping as Record<string, string | undefined>)[dimKey];
+        if (fieldValue) {
+          result.push({ metricName: m.name_zh, dimension: label, fieldName: fieldValue });
+        }
+      }
+    }
+    return result;
+  }, [selectedTable, linkedMetrics]);
 
   // Not configured metrics
   const notConfiguredMetrics = metricDefinitions.filter((m) => m.status === 'not_configured');
 
   const handleDeleteTable = (schema: TableSchema) => {
-    deleteTableSchema(schema.database, schema.table_name);
-    if (selectedTableKey === `${schema.database}.${schema.table_name}`) {
+    deleteTableSchema(schema.warehouse_layer, schema.table_name);
+    if (selectedTableKey === `${schema.warehouse_layer}.${schema.table_name}`) {
       setSelectedTableKey(null);
     }
     messageApi.success(`已删除数据源表 ${schema.table_name}`);
@@ -67,8 +105,14 @@ const DataSourcePage: React.FC = () => {
   const fieldColumns = [
     { title: '字段名', dataIndex: 'name', key: 'name', render: (v: string) => <Text code>{v}</Text> },
     { title: '类型', dataIndex: 'type', key: 'type', render: (v: string) => <Tag>{v}</Tag> },
-    { title: '描述', dataIndex: 'description', key: 'description' },
-    { title: '示例值', dataIndex: 'sample_value', key: 'sample_value', render: (v: string) => <Text type="secondary">{v}</Text> },
+    { title: '业务描述', dataIndex: 'description', key: 'description' },
+    { title: '备注', dataIndex: 'remark', key: 'remark', render: (v: string) => <Text type="secondary">{v || '-'}</Text> },
+  ];
+
+  const dimensionMappingColumns = [
+    { title: '关联指标', dataIndex: 'metricName', key: 'metricName' },
+    { title: '维度', dataIndex: 'dimension', key: 'dimension', render: (v: string) => <Tag color="blue">{v}</Tag> },
+    { title: '映射字段', dataIndex: 'fieldName', key: 'fieldName', render: (v: string) => <Text code>{v}</Text> },
   ];
 
   return (
@@ -128,11 +172,12 @@ const DataSourcePage: React.FC = () => {
             <Card
               title={
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Text strong>{selectedTable.database}.{selectedTable.table_name}</Text>
+                  <Text strong>{selectedTable.warehouse_layer}.{selectedTable.table_name}</Text>
                   <Badge status="success" text="已连接" />
                 </div>
               }
               size="small"
+              style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}
               extra={
                 <Space>
                   <Button
@@ -152,10 +197,10 @@ const DataSourcePage: React.FC = () => {
                 </Space>
               }
             >
-              <Descriptions bordered size="small" column={1} style={{ marginBottom: 16 }}>
-                <Descriptions.Item label="数据库">{selectedTable.database}</Descriptions.Item>
+              <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
+                <Descriptions.Item label="数仓层级">{selectedTable.warehouse_layer}</Descriptions.Item>
                 <Descriptions.Item label="表名">{selectedTable.table_name}</Descriptions.Item>
-                <Descriptions.Item label="描述">{selectedTable.description}</Descriptions.Item>
+                <Descriptions.Item label="业务描述" span={2}>{selectedTable.description}</Descriptions.Item>
                 <Descriptions.Item label="字段数">{selectedTable.columns.length}</Descriptions.Item>
                 <Descriptions.Item label="连接状态">
                   <Tag icon={<CheckCircleOutlined />} color="success">已连接</Tag>
@@ -181,6 +226,19 @@ const DataSourcePage: React.FC = () => {
                   ))}
                 </div>
               )}
+
+              {dimensionMappingInfo.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <Title level={5}><LinkOutlined /> 维度映射</Title>
+                  <Table
+                    dataSource={dimensionMappingInfo}
+                    columns={dimensionMappingColumns}
+                    rowKey={(r) => `${r.metricName}-${r.dimension}`}
+                    size="small"
+                    pagination={false}
+                  />
+                </div>
+              )}
             </Card>
           ) : (
             <Card style={{ height: 'calc(100vh - 180px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -193,16 +251,16 @@ const DataSourcePage: React.FC = () => {
       <DataSourceModal
         open={showAddModal}
         editingTable={editingTable}
-        existingDatabases={[...new Set(tableSchemas.map((s) => s.database))]}
+        existingLayers={[...new Set(tableSchemas.map((s) => s.warehouse_layer))]}
         onClose={() => { setShowAddModal(false); setEditingTable(null); }}
         onSave={(schema, isEdit) => {
           if (isEdit && editingTable) {
-            updateTableSchema(editingTable.database, editingTable.table_name, schema);
-            setSelectedTableKey(`${schema.database || editingTable.database}.${schema.table_name || editingTable.table_name}`);
+            updateTableSchema(editingTable.warehouse_layer, editingTable.table_name, schema);
+            setSelectedTableKey(`${schema.warehouse_layer || editingTable.warehouse_layer}.${schema.table_name || editingTable.table_name}`);
             messageApi.success('数据源表已更新');
           } else {
             addTableSchema(schema as TableSchema);
-            setSelectedTableKey(`${schema.database}.${schema.table_name}`);
+            setSelectedTableKey(`${schema.warehouse_layer}.${schema.table_name}`);
             messageApi.success('数据源表已创建');
           }
           setShowAddModal(false);
@@ -217,31 +275,34 @@ const DataSourcePage: React.FC = () => {
 function DataSourceModal({
   open,
   editingTable,
-  existingDatabases,
+  existingLayers,
   onClose,
   onSave,
 }: {
   open: boolean;
   editingTable: TableSchema | null;
-  existingDatabases: string[];
+  existingLayers: string[];
   onClose: () => void;
   onSave: (schema: TableSchema | Partial<TableSchema>, isEdit: boolean) => void;
 }) {
   const [form] = Form.useForm();
   const isEdit = !!editingTable;
 
+  const defaultLayerOptions = ['ods', 'dwd', 'dwm', 'dws', 'dim', 'ads'];
+  const allLayerOptions = [...new Set([...defaultLayerOptions, ...existingLayers])];
+
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
-      const columns: ColumnSchema[] = (values.columns || []).map((c: ColumnSchema) => ({
+      const columns: ColumnSchema[] = (values.columns || []).map((c: Record<string, string>) => ({
         name: c.name?.trim() || '',
         type: c.type || 'STRING',
         description: c.description?.trim() || '',
-        sample_value: c.sample_value?.trim() || '',
+        remark: c.remark?.trim() || '',
       })).filter((c: ColumnSchema) => c.name);
 
       const schema: TableSchema = {
-        database: values.database?.trim() || '',
+        warehouse_layer: values.warehouse_layer?.trim() || '',
         table_name: values.table_name?.trim() || '',
         description: values.description?.trim() || '',
         columns,
@@ -270,36 +331,34 @@ function DataSourceModal({
         layout="vertical"
         size="small"
         initialValues={editingTable ? {
-          database: editingTable.database,
+          warehouse_layer: editingTable.warehouse_layer,
           table_name: editingTable.table_name,
           description: editingTable.description,
           columns: editingTable.columns,
         } : {
-          database: '',
+          warehouse_layer: '',
           table_name: '',
           description: '',
-          columns: [{ name: '', type: 'STRING', description: '', sample_value: '' }],
+          columns: [{ name: '', type: 'STRING', description: '', remark: '' }],
         }}
       >
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
-              name="database"
-              label="数据库"
-              rules={[{ required: true, message: '请输入数据库名' }]}
+              name="warehouse_layer"
+              label="数仓层级"
+              rules={[{ required: true, message: '请选择或输入数仓层级' }]}
             >
               <Select
                 showSearch
                 allowClear
-                placeholder="选择或输入数据库名"
-                options={existingDatabases.map((db) => ({ label: db, value: db }))}
-                // Allow custom input
-                mode={undefined}
+                placeholder="选择或输入数仓层级"
+                options={allLayerOptions.map((l) => ({ label: l.toUpperCase(), value: l }))}
                 dropdownRender={(menu) => (
                   <>
                     {menu}
                     <div style={{ padding: '4px 8px', fontSize: 11, color: '#999' }}>
-                      可直接输入新数据库名
+                      可直接输入新的数仓层级
                     </div>
                   </>
                 )}
@@ -316,11 +375,18 @@ function DataSourceModal({
             </Form.Item>
           </Col>
         </Row>
-        <Form.Item name="description" label="描述">
-          <Input.TextArea placeholder="表的用途描述" rows={2} />
+        <Form.Item name="description" label="业务描述">
+          <Input.TextArea placeholder="表的业务用途描述" rows={2} />
         </Form.Item>
 
         <Title level={5} style={{ marginTop: 16 }}>字段定义</Title>
+        <Row gutter={8} style={{ marginBottom: 4, paddingLeft: 4 }}>
+          <Col span={6}><Text type="secondary" style={{ fontSize: 12 }}>字段名</Text></Col>
+          <Col span={4}><Text type="secondary" style={{ fontSize: 12 }}>类型</Text></Col>
+          <Col span={7}><Text type="secondary" style={{ fontSize: 12 }}>业务描述</Text></Col>
+          <Col span={5}><Text type="secondary" style={{ fontSize: 12 }}>备注</Text></Col>
+          <Col span={2} />
+        </Row>
         <Form.List name="columns">
           {(fields, { add, remove }) => (
             <>
@@ -339,17 +405,20 @@ function DataSourceModal({
                         { label: 'DOUBLE', value: 'DOUBLE' },
                         { label: 'TIMESTAMP', value: 'TIMESTAMP' },
                         { label: 'BOOLEAN', value: 'BOOLEAN' },
+                        { label: 'DATE', value: 'DATE' },
+                        { label: 'INT', value: 'INT' },
+                        { label: 'DECIMAL', value: 'DECIMAL' },
                       ]} />
                     </Form.Item>
                   </Col>
                   <Col span={7}>
                     <Form.Item {...restField} name={[name, 'description']} noStyle>
-                      <Input placeholder="描述" size="small" />
+                      <Input placeholder="业务描述" size="small" />
                     </Form.Item>
                   </Col>
                   <Col span={5}>
-                    <Form.Item {...restField} name={[name, 'sample_value']} noStyle>
-                      <Input placeholder="示例值" size="small" />
+                    <Form.Item {...restField} name={[name, 'remark']} noStyle>
+                      <Input placeholder="备注" size="small" />
                     </Form.Item>
                   </Col>
                   <Col span={2}>
@@ -357,7 +426,7 @@ function DataSourceModal({
                   </Col>
                 </Row>
               ))}
-              <Button type="dashed" onClick={() => add({ name: '', type: 'STRING', description: '', sample_value: '' })} block icon={<PlusOutlined />} size="small" style={{ marginTop: 8 }}>
+              <Button type="dashed" onClick={() => add({ name: '', type: 'STRING', description: '', remark: '' })} block icon={<PlusOutlined />} size="small" style={{ marginTop: 8 }}>
                 添加字段
               </Button>
             </>

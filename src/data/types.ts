@@ -39,14 +39,24 @@ export interface FormulaConfig {
   sub_items?: SparePartSubItem[];
   hardcoded_rates?: Record<string, number>;
   description?: string;
+  // New: structured raw value naming for formula preview
+  raw_value_name?: string;  // e.g. "工单数", "事件数", "工时数"
+  raw_value_unit?: string;  // e.g. "单", "次", "小时"
+}
+
+// Dimension mapping: maps data source fields to standard dimensions
+export interface DimensionMapping {
+  station_field?: string;       // field name for station ID, e.g. "swap_station_id"
+  time_field?: string;          // field name for time, e.g. "dt" or "create_time"
+  station_model_field?: string; // field name for station model, e.g. "station_model"
+  region_field?: string;        // field name for region, e.g. "region"
 }
 
 export interface DataSourceConfig {
   table_name: string;
-  database: string;
-  key_fields: string[];
+  warehouse_layer: string; // was "database", now "数仓层级" (dwd/dwm/dws/ods/dim)
   filter_conditions?: string;
-  connection_status: 'connected' | 'disconnected' | 'not_configured';
+  dimension_mapping: DimensionMapping;
 }
 
 export interface MetricDefinition {
@@ -103,16 +113,16 @@ export interface PredictionResult {
 
 export interface TableSchema {
   table_name: string;
-  database: string;
-  description: string;
+  warehouse_layer: string; // was "database", now "数仓层级"
+  description: string;     // "业务描述"
   columns: ColumnSchema[];
 }
 
 export interface ColumnSchema {
   name: string;
   type: string;
-  description: string;
-  sample_value: string;
+  description: string;  // "业务描述"
+  remark: string;        // was "sample_value", now "备注"
 }
 
 export interface FilterState {

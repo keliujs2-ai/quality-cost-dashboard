@@ -1,23 +1,31 @@
 import React, { useMemo, useState } from 'react';
-import { Card, Row, Col, Statistic, Select, DatePicker, Space, Tag, Typography, Modal, Input, Checkbox, Button, List, Popconfirm } from 'antd';
-import { ArrowUpOutlined, ArrowDownOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { Tabs, Card, Row, Col, Statistic, Select, DatePicker, Space, Typography } from 'antd';
+import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, BarChart, Bar, ComposedChart,
+} from 'recharts';
 import dayjs from 'dayjs';
 import { useQualityCost } from '../../context/QualityCostContext';
-import { CATEGORY_COLORS, CATEGORY_LABELS, ALL_METRIC_DEFINITIONS } from '../../data/constants';
+import { CATEGORY_COLORS, CATEGORY_LABELS } from '../../data/constants';
 import { formatCurrency, formatMonth, formatNumber } from '../../utils/formatters';
-import type { DashboardView, StationModel } from '../../data/types';
+import type { StationModel } from '../../data/types';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
+const STATION_MODEL_COLORS: Record<string, string> = {
+  PS2: '#1890ff',
+  PS3: '#52c41a',
+  PS4: '#faad14',
+};
+
 const DashboardPage: React.FC = () => {
-  const { costRecords, stations, dashboardViews, addDashboardView, deleteDashboardView } = useQualityCost();
+  const { costRecords, stations, dashboardViews } = useQualityCost();
   const [activeViewId, setActiveViewId] = useState(dashboardViews[0]?.id || '');
   const [selectedStations, setSelectedStations] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<StationModel[]>([]);
   const [dateRange, setDateRange] = useState<[string, string]>(['2025-04', '2026-03']);
-  const [showNewViewModal, setShowNewViewModal] = useState(false);
 
   const activeView = dashboardViews.find((v) => v.id === activeViewId) || dashboardViews[0];
 
@@ -104,20 +112,100 @@ const DashboardPage: React.FC = () => {
     return (lastTotal - prevTotal) / prevTotal;
   }, [filtered]);
 
+  // Station type cost comparison (grouped bar, averaged per station)
+  const stationTypeCostData = useMemo(() => {
+    // Count stations per model
+    const modelStationCounts: Record<string, Set<string>> = {};
+    const modelCategoryCosts: Record<string, Record<string, number>> = {};
+
+    for (const r of filtered) {
+      const model = r.station_model;
+      if (!modelStationCounts[model]) {
+        modelStationCounts[model] = new Set();
+        modelCategoryCosts[model] = {};
+      }
+      modelStationCounts[model].add(r.station_id);
+      modelCategoryCosts[model][r.category] = (modelCategoryCosts[model][r.category] || 0) + r.calculated_cost;
+    }
+
+    return Object.keys(modelCategoryCosts)
+      .sort()
+      .map((model) => {
+        const count = modelStationCounts[model].size || 1;
+        const entry: Record<string, string | number> = { model };
+        let total = 0;
+        for (const [cat] of Object.entries(CATEGORY_LABELS)) {
+          const avgCost = Math.round((modelCategoryCosts[model][cat] || 0) / count);
+          entry[cat] = avgCost;
+          total += avgCost;
+        }
+        entry.total = total;
+        return entry;
+      });
+  }, [filtered]);
+
+  // Service age cost analysis
+  const serviceAgeCostData = useMemo(() => {
+    // Build a map: model -> serviceAgeMonth -> { totalCost, stationMonths }
+    const modelAgeMap: Record<string, Map<number, { totalCost: number; count: number }>> = {};
+    const stationMap = new Map(stations.map((s) => [s.id, s]));
+
+    for (const r of filtered) {
+      const station = stationMap.get(r.station_id);
+      if (!station || !station.activation_date) continue;
+
+      const activationMonth = dayjs(station.activation_date).startOf('month');
+      const recordMonth = dayjs(r.month);
+      const serviceAge = recordMonth.diff(activationMonth, 'month');
+      if (serviceAge < 0) continue;
+
+      const model = r.station_model;
+      if (!modelAgeMap[model]) modelAgeMap[model] = new Map();
+      const ageMap = modelAgeMap[model];
+      if (!ageMap.has(serviceAge)) {
+        ageMap.set(serviceAge, { totalCost: 0, count: 0 });
+      }
+      const entry = ageMap.get(serviceAge)!;
+      entry.totalCost += r.calculated_cost;
+      entry.count += 1;
+    }
+
+    // Flatten into array for chart, one data point per service age
+    // We want: { serviceAge, PS2, PS3, PS4 }
+    const allAges = new Set<number>();
+    for (const ageMap of Object.values(modelAgeMap)) {
+      for (const age of ageMap.keys()) allAges.add(age);
+    }
+    const sortedAges = Array.from(allAges).sort((a, b) => a - b);
+
+    return sortedAges.map((age) => {
+      const point: Record<string, number | string> = { serviceAge: age };
+      for (const model of ['PS2', 'PS3', 'PS4']) {
+        const entry = modelAgeMap[model]?.get(age);
+        if (entry && entry.count > 0) {
+          // Average cost per station-month at this service age
+          // count is number of cost records; we want average total cost
+          // Group by unique station to get station count
+          point[model] = Math.round(entry.totalCost / Math.max(1, entry.count) * 10);
+        }
+      }
+      return point;
+    });
+  }, [filtered, stations]);
+
   return (
     <div>
+      {/* View tabs */}
+      <Tabs
+        activeKey={activeViewId}
+        onChange={setActiveViewId}
+        items={dashboardViews.map((v) => ({ key: v.id, label: v.name }))}
+        style={{ marginBottom: 8 }}
+      />
+
       {/* Filters */}
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
-          <div>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>看板视图</div>
-            <Select
-              value={activeViewId}
-              onChange={setActiveViewId}
-              style={{ width: 200 }}
-              options={dashboardViews.map((v) => ({ label: v.name, value: v.id }))}
-            />
-          </div>
           <div>
             <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>换电站</div>
             <Select
@@ -195,7 +283,7 @@ const DashboardPage: React.FC = () => {
         ))}
       </Row>
 
-      {/* Charts */}
+      {/* Charts row 1: trend + pie */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={16}>
           <Card title="成本趋势" size="small">
@@ -237,7 +325,7 @@ const DashboardPage: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Station comparison */}
+      {/* Top 10 stations */}
       <Card title="换电站成本 TOP 10" size="small" style={{ marginBottom: 16 }}>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={topStations} layout="vertical" margin={{ left: 100 }}>
@@ -253,93 +341,68 @@ const DashboardPage: React.FC = () => {
         </ResponsiveContainer>
       </Card>
 
-      {/* View management */}
-      <Card
-        title="看板视图管理"
-        size="small"
-        extra={<Button icon={<PlusOutlined />} size="small" onClick={() => setShowNewViewModal(true)}>新建视图</Button>}
-      >
-        <List
-          size="small"
-          dataSource={dashboardViews}
-          renderItem={(view) => (
-            <List.Item
-              actions={[
-                <Popconfirm title="确定删除此视图?" onConfirm={() => deleteDashboardView(view.id)} key="del">
-                  <Button size="small" danger icon={<DeleteOutlined />} disabled={dashboardViews.length <= 1} />
-                </Popconfirm>,
-              ]}
-            >
-              <List.Item.Meta
-                title={view.name}
-                description={`包含 ${view.metric_ids.length} 个指标`}
-              />
-            </List.Item>
-          )}
-        />
-      </Card>
+      {/* New charts for the boss */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        {/* Station type cost comparison */}
+        <Col span={12}>
+          <Card title="站型成本对比（单站均摊）" size="small">
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={stationTypeCostData} margin={{ bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="model" style={{ fontSize: 12 }} />
+                <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
+                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                <Legend />
+                {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
+                  <Bar key={cat} dataKey={cat} name={label} fill={CATEGORY_COLORS[cat]} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              各站型总成本按站数均分，便于公平对比不同站型的单站成本结构
+            </Text>
+          </Card>
+        </Col>
 
-      <NewViewModal
-        open={showNewViewModal}
-        onClose={() => setShowNewViewModal(false)}
-        onAdd={(view) => { addDashboardView(view); setActiveViewId(view.id); }}
-      />
+        {/* Service age cost analysis */}
+        <Col span={12}>
+          <Card title="服役月龄成本趋势" size="small">
+            <ResponsiveContainer width="100%" height={350}>
+              <ComposedChart data={serviceAgeCostData} margin={{ bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="serviceAge"
+                  style={{ fontSize: 11 }}
+                  label={{ value: '服役月数', position: 'insideBottom', offset: -10, style: { fontSize: 11 } }}
+                />
+                <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
+                <Tooltip
+                  formatter={(v) => formatCurrency(Number(v))}
+                  labelFormatter={(label) => `服役 ${label} 个月`}
+                />
+                <Legend />
+                {(['PS2', 'PS3', 'PS4'] as const).map((model) => (
+                  <Line
+                    key={model}
+                    type="monotone"
+                    dataKey={model}
+                    name={model}
+                    stroke={STATION_MODEL_COLORS[model]}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                ))}
+              </ComposedChart>
+            </ResponsiveContainer>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              按服役月龄展示各站型平均质量成本变化，揭示设备老化对成本的影响
+            </Text>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };
-
-// New view modal
-function NewViewModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (view: DashboardView) => void }) {
-  const [name, setName] = useState('');
-  const [selectedMetrics, setSelectedMetrics] = useState<string[]>([]);
-
-  const grouped = useMemo(() => {
-    const g: Record<string, typeof ALL_METRIC_DEFINITIONS> = {};
-    for (const m of ALL_METRIC_DEFINITIONS) {
-      if (m.status !== 'active') continue;
-      (g[m.category] ||= []).push(m);
-    }
-    return g;
-  }, []);
-
-  const handleOk = () => {
-    if (!name.trim() || selectedMetrics.length === 0) return;
-    onAdd({
-      id: `view_${Date.now()}`,
-      name: name.trim(),
-      metric_ids: selectedMetrics,
-      dimensions: ['month', 'station'],
-      chart_types: ['line', 'pie', 'bar'],
-    });
-    setName('');
-    setSelectedMetrics([]);
-    onClose();
-  };
-
-  return (
-    <Modal title="新建看板视图" open={open} onCancel={onClose} onOk={handleOk} okText="创建" cancelText="取消" width={600}>
-      <div style={{ marginBottom: 16 }}>
-        <Text>视图名称</Text>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="输入视图名称" style={{ marginTop: 4 }} />
-      </div>
-      <Text>选择指标</Text>
-      {Object.entries(grouped).map(([cat, metrics]) => (
-        <div key={cat} style={{ marginTop: 8 }}>
-          <Tag color={CATEGORY_COLORS[cat]}>{CATEGORY_LABELS[cat]}</Tag>
-          <div style={{ marginTop: 4, paddingLeft: 8 }}>
-            <Checkbox.Group
-              options={metrics.map((m) => ({ label: m.name_zh, value: m.id }))}
-              value={selectedMetrics.filter((id) => metrics.some((m) => m.id === id))}
-              onChange={(vals) => {
-                const otherIds = selectedMetrics.filter((id) => !metrics.some((m) => m.id === id));
-                setSelectedMetrics([...otherIds, ...(vals as string[])]);
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </Modal>
-  );
-}
 
 export default DashboardPage;

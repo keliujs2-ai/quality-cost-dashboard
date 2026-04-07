@@ -92,10 +92,10 @@ const DetailPage: React.FC = () => {
       sorter: (a, b) => a.calculated_cost - b.calculated_cost,
     },
     {
-      title: '区域',
+      title: '区域公司',
       dataIndex: 'region',
       key: 'region',
-      width: 80,
+      width: 100,
     },
   ];
 
@@ -130,10 +130,10 @@ const DetailPage: React.FC = () => {
             />
           </div>
           <div>
-            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>区域</div>
+            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>区域公司</div>
             <Select
               mode="multiple"
-              placeholder="全部区域"
+              placeholder="全部区域公司"
               style={{ width: 160 }}
               options={regions.map((r) => ({ label: r, value: r }))}
               value={selectedRegions}

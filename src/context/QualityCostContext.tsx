@@ -21,20 +21,16 @@ interface QualityCostContextType {
   tableSchemas: TableSchema[];
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
-  // Metric CRUD
   addMetricDefinition: (metric: MetricDefinition) => void;
   updateMetricDefinition: (id: string, updates: Partial<MetricDefinition>) => void;
   deleteMetricDefinition: (id: string) => void;
-  // Dashboard view CRUD
   addDashboardView: (view: DashboardView) => void;
   updateDashboardView: (id: string, updates: Partial<DashboardView>) => void;
   deleteDashboardView: (id: string) => void;
-  // Table schema CRUD
   addTableSchema: (schema: TableSchema) => void;
-  updateTableSchema: (database: string, tableName: string, updates: Partial<TableSchema>) => void;
-  deleteTableSchema: (database: string, tableName: string) => void;
+  updateTableSchema: (layer: string, tableName: string, updates: Partial<TableSchema>) => void;
+  deleteTableSchema: (layer: string, tableName: string) => void;
   filteredRecords: CostRecord[];
-  // Version counter to force re-generation
   dataVersion: number;
 }
 
@@ -73,7 +69,7 @@ function deepCloneMetrics(metrics: MetricDefinition[]): MetricDefinition[] {
       multipliers: m.formula.multipliers ? [...m.formula.multipliers] : undefined,
       hardcoded_rates: m.formula.hardcoded_rates ? { ...m.formula.hardcoded_rates } : undefined,
     },
-    data_source: m.data_source ? { ...m.data_source, key_fields: [...m.data_source.key_fields] } : null,
+    data_source: m.data_source ? { ...m.data_source, dimension_mapping: { ...m.data_source.dimension_mapping } } : null,
   }));
 }
 
@@ -92,10 +88,8 @@ export function QualityCostProvider({ children }: { children: React.ReactNode })
     regions: [],
     stationTypes: [],
   });
-  // Version counter — bumped on metric changes to trigger costRecords regeneration
   const [dataVersion, setDataVersion] = useState(0);
 
-  // Regenerate mock data whenever metrics or version change
   const costRecords = useMemo(
     () => generateAllMockData(metricDefinitions),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,7 +107,6 @@ export function QualityCostProvider({ children }: { children: React.ReactNode })
     });
   }, [costRecords, filters]);
 
-  // === Metric CRUD ===
   const addMetricDefinition = useCallback((metric: MetricDefinition) => {
     setMetricDefinitions((prev) => [...prev, metric]);
     setDataVersion((v) => v + 1);
@@ -123,7 +116,6 @@ export function QualityCostProvider({ children }: { children: React.ReactNode })
     setMetricDefinitions((prev) =>
       prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
     );
-    // Only bump version if status or formula changed (affects cost calculation)
     if (updates.status || updates.formula) {
       setDataVersion((v) => v + 1);
     }
@@ -131,67 +123,42 @@ export function QualityCostProvider({ children }: { children: React.ReactNode })
 
   const deleteMetricDefinition = useCallback((id: string) => {
     setMetricDefinitions((prev) => prev.filter((m) => m.id !== id));
-    // Also remove from dashboard views
     setDashboardViews((prev) =>
       prev.map((v) => ({ ...v, metric_ids: v.metric_ids.filter((mid) => mid !== id) })),
     );
     setDataVersion((v) => v + 1);
   }, []);
 
-  // === Dashboard view CRUD ===
   const addDashboardView = useCallback((view: DashboardView) => {
     setDashboardViews((prev) => [...prev, view]);
   }, []);
-
   const updateDashboardView = useCallback((id: string, updates: Partial<DashboardView>) => {
-    setDashboardViews((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, ...updates } : v)),
-    );
+    setDashboardViews((prev) => prev.map((v) => (v.id === id ? { ...v, ...updates } : v)));
   }, []);
-
   const deleteDashboardView = useCallback((id: string) => {
     setDashboardViews((prev) => prev.filter((v) => v.id !== id));
   }, []);
 
-  // === Table schema CRUD ===
   const addTableSchema = useCallback((schema: TableSchema) => {
     setTableSchemas((prev) => [...prev, schema]);
   }, []);
-
-  const updateTableSchema = useCallback((database: string, tableName: string, updates: Partial<TableSchema>) => {
+  const updateTableSchema = useCallback((layer: string, tableName: string, updates: Partial<TableSchema>) => {
     setTableSchemas((prev) =>
-      prev.map((s) =>
-        s.database === database && s.table_name === tableName ? { ...s, ...updates } : s,
-      ),
+      prev.map((s) => s.warehouse_layer === layer && s.table_name === tableName ? { ...s, ...updates } : s),
     );
   }, []);
-
-  const deleteTableSchema = useCallback((database: string, tableName: string) => {
-    setTableSchemas((prev) =>
-      prev.filter((s) => !(s.database === database && s.table_name === tableName)),
-    );
+  const deleteTableSchema = useCallback((layer: string, tableName: string) => {
+    setTableSchemas((prev) => prev.filter((s) => !(s.warehouse_layer === layer && s.table_name === tableName)));
   }, []);
 
   const value = useMemo(
     () => ({
       stations: MOCK_STATIONS,
-      metricDefinitions,
-      costRecords,
-      dashboardViews,
-      tableSchemas,
-      filters,
-      setFilters,
-      addMetricDefinition,
-      updateMetricDefinition,
-      deleteMetricDefinition,
-      addDashboardView,
-      updateDashboardView,
-      deleteDashboardView,
-      addTableSchema,
-      updateTableSchema,
-      deleteTableSchema,
-      filteredRecords,
-      dataVersion,
+      metricDefinitions, costRecords, dashboardViews, tableSchemas, filters, setFilters,
+      addMetricDefinition, updateMetricDefinition, deleteMetricDefinition,
+      addDashboardView, updateDashboardView, deleteDashboardView,
+      addTableSchema, updateTableSchema, deleteTableSchema,
+      filteredRecords, dataVersion,
     }),
     [metricDefinitions, costRecords, dashboardViews, tableSchemas, filters, filteredRecords, dataVersion,
      addMetricDefinition, updateMetricDefinition, deleteMetricDefinition,

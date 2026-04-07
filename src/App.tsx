@@ -8,6 +8,7 @@ import DetailPage from './components/detail/DetailPage';
 import DataSourcePage from './components/datasource/DataSourcePage';
 import MetricsPage from './components/metrics/MetricsPage';
 import PredictionPage from './components/prediction/PredictionPage';
+import DashboardConfigPage from './components/dashboard/DashboardConfigPage';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
               <Route path="/datasource" element={<DataSourcePage />} />
               <Route path="/metrics" element={<MetricsPage />} />
               <Route path="/prediction" element={<PredictionPage />} />
+              <Route path="/dashboard-config" element={<DashboardConfigPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>

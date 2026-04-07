@@ -18,6 +18,8 @@ const menuItems = [
   { key: '/datasource', icon: <DatabaseOutlined />, label: '数据源配置' },
   { key: '/metrics', icon: <SettingOutlined />, label: '指标配置' },
   { key: '/prediction', icon: <LineChartOutlined />, label: '指标预测' },
+  { type: 'divider' as const },
+  { key: '/dashboard-config', icon: <SettingOutlined />, label: '看板配置' },
 ];
 
 const AppLayout: React.FC = () => {
