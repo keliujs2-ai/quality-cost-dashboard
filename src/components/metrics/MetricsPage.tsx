@@ -225,23 +225,7 @@ function MetricConfigPanel({
 
   const formulaTypeLabel = FORMULA_TYPE_LABELS[formula.type] || formula.type;
 
-  // Sub-items management for checkbox_sum
-  const handleAddSubItem = () => {
-    const currentItems = formula.sub_items || [];
-    const newItem: SparePartSubItem = {
-      key: `field_${Date.now()}`,
-      label_zh: '新子项',
-      enabled: true,
-      coefficient: 1,
-    };
-    handleSave('sub_items', [...currentItems, newItem]);
-  };
-
-  const handleDeleteSubItem = (key: string) => {
-    const currentItems = formula.sub_items || [];
-    handleSave('sub_items', currentItems.filter((item) => item.key !== key));
-  };
-
+  // Sub-items management for checkbox_sum (detail panel: toggle + coefficient only)
   const handleToggleSubItem = (key: string, enabled: boolean) => {
     const currentItems = formula.sub_items || [];
     handleSave('sub_items', currentItems.map((item) => (item.key === key ? { ...item, enabled } : item)));
@@ -250,11 +234,6 @@ function MetricConfigPanel({
   const handleSubItemCoefficient = (key: string, coefficient: number) => {
     const currentItems = formula.sub_items || [];
     handleSave('sub_items', currentItems.map((item) => (item.key === key ? { ...item, coefficient } : item)));
-  };
-
-  const handleSubItemField = (key: string, field: 'key' | 'label_zh', value: string) => {
-    const currentItems = formula.sub_items || [];
-    handleSave('sub_items', currentItems.map((item) => (item.key === key ? { ...item, [field]: value } : item)));
   };
 
   return (
@@ -392,7 +371,7 @@ function MetricConfigPanel({
                 addonAfter={`元/${rawValueUnit || '小时'}`}
               />
             </Form.Item>
-            <FormulaPreview formula={`SUM(${formula.value_field || 'value_field'}) × ${formula.hourly_rate ?? 0} = 成本（元/${rawValueUnit || '小时'}）`} />
+            <FormulaPreview formula={`SUM(${rawValueName}) × ${formula.hourly_rate ?? 0}（元/${rawValueUnit || '小时'}）`} />
           </Form>
         )}
 
@@ -448,7 +427,7 @@ function MetricConfigPanel({
             </Row>
 
             <Text type="secondary" style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
-              选择纳入计算的子项，并设置系数（默认为1）:
+              选择纳入计算的子项，并设置系数（默认为1）。如需增删子项，请通过「编辑基本信息」操作。
             </Text>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {(formula.sub_items || []).map((item) => (
@@ -465,12 +444,7 @@ function MetricConfigPanel({
                   }}
                 >
                   <Switch size="small" checked={item.enabled} onChange={(v) => handleToggleSubItem(item.key, v)} />
-                  <Input
-                    size="small"
-                    value={item.label_zh}
-                    onChange={(e) => handleSubItemField(item.key, 'label_zh', e.target.value)}
-                    style={{ width: 120, opacity: item.enabled ? 1 : 0.5 }}
-                  />
+                  <Text style={{ flex: 1, opacity: item.enabled ? 1 : 0.5 }}>{item.label_zh}</Text>
                   <Text code style={{ fontSize: 11, opacity: item.enabled ? 1 : 0.5 }}>{item.key}</Text>
                   <InputNumber
                     size="small"
@@ -483,21 +457,9 @@ function MetricConfigPanel({
                     disabled={!item.enabled}
                     addonBefore="x"
                   />
-                  <Popconfirm title="确认删除此子项？" onConfirm={() => handleDeleteSubItem(item.key)}>
-                    <Button size="small" type="text" danger icon={<MinusCircleOutlined />} />
-                  </Popconfirm>
                 </div>
               ))}
             </div>
-            <Button
-              type="dashed"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={handleAddSubItem}
-              style={{ marginTop: 12, width: '100%' }}
-            >
-              添加子项
-            </Button>
             <div style={{ marginTop: 8 }}>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 已选 {(formula.sub_items || []).filter((i) => i.enabled).length}/{(formula.sub_items || []).length} 项
@@ -550,6 +512,7 @@ function AddMetricModal({
   const [form] = Form.useForm();
   const formulaType = Form.useWatch('formula_type', form);
   const [messageApi, addModalContextHolder] = message.useMessage();
+  const [modalSubItems, setModalSubItems] = useState<SparePartSubItem[]>([]);
 
   const handleOk = async () => {
     try {
@@ -592,7 +555,7 @@ function AddMetricModal({
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'checkbox_sum':
-          formulaConfig.sub_items = [];
+          formulaConfig.sub_items = modalSubItems;
           formulaConfig.raw_value_name = values.raw_value_name || '';
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
@@ -618,6 +581,7 @@ function AddMetricModal({
 
       onAdd(metric);
       form.resetFields();
+      setModalSubItems([]);
     } catch {
       // validation error
     }
@@ -627,7 +591,7 @@ function AddMetricModal({
     <Modal
       title="新增质量成本指标"
       open={open}
-      onCancel={() => { form.resetFields(); onClose(); }}
+      onCancel={() => { form.resetFields(); setModalSubItems([]); onClose(); }}
       onOk={handleOk}
       okText="创建"
       cancelText="取消"
@@ -794,7 +758,7 @@ function AddMetricModal({
                 </Form.Item>
               </Col>
             </Row>
-            <Alert message="子项配置请在创建后通过右侧配置面板管理" type="info" showIcon />
+            <SubItemsEditor subItems={modalSubItems} onChange={setModalSubItems} />
           </>
         )}
 
@@ -840,6 +804,9 @@ function EditBasicInfoModal({
 }) {
   const [form] = Form.useForm();
   const formulaType = Form.useWatch('formula_type', form);
+  const [editSubItems, setEditSubItems] = useState<SparePartSubItem[]>(
+    metric.formula.sub_items ? metric.formula.sub_items.map((i) => ({ ...i })) : [],
+  );
 
   const handleOk = async () => {
     try {
@@ -885,7 +852,7 @@ function EditBasicInfoModal({
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'checkbox_sum':
-          formulaConfig.sub_items = metric.formula.sub_items || [];
+          formulaConfig.sub_items = editSubItems;
           formulaConfig.raw_value_name = values.raw_value_name || '';
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
@@ -1091,7 +1058,7 @@ function EditBasicInfoModal({
                 </Form.Item>
               </Col>
             </Row>
-            <Alert message="子项配置请在保存后通过右侧配置面板管理" type="info" showIcon />
+            <SubItemsEditor subItems={editSubItems} onChange={setEditSubItems} />
           </>
         )}
 
@@ -1117,6 +1084,87 @@ function EditBasicInfoModal({
         )}
       </Form>
     </Modal>
+  );
+}
+
+// ==================== Sub-Items Editor (for checkbox_sum in modals) ====================
+
+function SubItemsEditor({
+  subItems,
+  onChange,
+}: {
+  subItems: SparePartSubItem[];
+  onChange: (items: SparePartSubItem[]) => void;
+}) {
+  const handleAdd = () => {
+    onChange([...subItems, { key: '', label_zh: '', enabled: true, coefficient: 1 }]);
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(subItems.filter((_, i) => i !== index));
+  };
+
+  const handleChange = (index: number, field: keyof SparePartSubItem, value: unknown) => {
+    onChange(subItems.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
+  };
+
+  return (
+    <div>
+      <Text type="secondary" style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
+        配置求和子项（字段名对应数据源列名）:
+      </Text>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {subItems.map((item, index) => (
+          <div
+            key={index}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 8px',
+              background: '#fafafa',
+              borderRadius: 4,
+              border: '1px solid #e8e8e8',
+            }}
+          >
+            <Input
+              size="small"
+              value={item.label_zh}
+              onChange={(e) => handleChange(index, 'label_zh', e.target.value)}
+              placeholder="显示名称"
+              style={{ width: 120 }}
+            />
+            <Input
+              size="small"
+              value={item.key}
+              onChange={(e) => handleChange(index, 'key', e.target.value)}
+              placeholder="字段名"
+              style={{ width: 160 }}
+            />
+            <InputNumber
+              size="small"
+              value={item.coefficient}
+              min={0}
+              max={10}
+              step={0.1}
+              style={{ width: 90 }}
+              onChange={(v) => v != null && handleChange(index, 'coefficient', v)}
+              addonBefore="x"
+            />
+            <Button size="small" type="text" danger icon={<MinusCircleOutlined />} onClick={() => handleRemove(index)} />
+          </div>
+        ))}
+      </div>
+      <Button
+        type="dashed"
+        size="small"
+        icon={<PlusOutlined />}
+        onClick={handleAdd}
+        style={{ marginTop: 8, width: '100%' }}
+      >
+        添加子项
+      </Button>
+    </div>
   );
 }
 
