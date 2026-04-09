@@ -372,6 +372,12 @@ export function generateAllMockData(customMetrics?: MetricDefinition[]): CostRec
 
         const recordId = `${station.id}_${metric.id}_${month}`;
 
+        // Calculate MIS (Months In Service)
+        const activationMonth = station.activation_date.substring(0, 7);
+        const [aY, aM] = activationMonth.split('-').map(Number);
+        const [rY, rM] = month.split('-').map(Number);
+        const mis = (rY - aY) * 12 + (rM - aM) + 1;
+
         records.push({
           id: recordId,
           station_id: station.id,
@@ -380,6 +386,7 @@ export function generateAllMockData(customMetrics?: MetricDefinition[]): CostRec
           region: station.region,
           city: station.city_company,
           month,
+          mis,
           category: metric.category,
           metric_id: metric.id,
           metric_name: metric.name_zh,

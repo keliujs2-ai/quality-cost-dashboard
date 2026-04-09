@@ -2,8 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Tabs, Card, Row, Col, Statistic, Select, DatePicker, Space, Typography } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar, ComposedChart,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, AreaChart, Area, LineChart, Line,
 } from 'recharts';
 import dayjs from 'dayjs';
 import { useQualityCost } from '../../context/QualityCostContext';
@@ -21,11 +21,13 @@ const STATION_MODEL_COLORS: Record<string, string> = {
 };
 
 const DashboardPage: React.FC = () => {
-  const { costRecords, stations, dashboardViews } = useQualityCost();
+  const { costRecords, stations, dashboardViews, metricDefinitions } = useQualityCost();
   const [activeViewId, setActiveViewId] = useState(dashboardViews[0]?.id || '');
   const [selectedStations, setSelectedStations] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<StationModel[]>([]);
   const [dateRange, setDateRange] = useState<[string, string]>(['2025-04', '2026-03']);
+  // For per-category trend chart
+  const [selectedCategory, setSelectedCategory] = useState<string>('labor');
 
   const activeView = dashboardViews.find((v) => v.id === activeViewId) || dashboardViews[0];
 
@@ -42,7 +44,7 @@ const DashboardPage: React.FC = () => {
     });
   }, [costRecords, activeView, selectedStations, selectedTypes, dateRange]);
 
-  // Summary stats
+  // === Metric cards: Total + per category ===
   const categoryTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const r of filtered) {
@@ -53,54 +55,7 @@ const DashboardPage: React.FC = () => {
 
   const totalCost = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
 
-  // Monthly trend data
-  const monthlyTrend = useMemo(() => {
-    const monthMap = new Map<string, Record<string, number>>();
-    for (const r of filtered) {
-      if (!monthMap.has(r.month)) {
-        monthMap.set(r.month, {});
-      }
-      const entry = monthMap.get(r.month)!;
-      entry[r.category] = (entry[r.category] || 0) + r.calculated_cost;
-    }
-    return Array.from(monthMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, cats]) => ({
-        month: formatMonth(month),
-        ...cats,
-        total: Object.values(cats).reduce((a, b) => a + b, 0),
-      }));
-  }, [filtered]);
-
-  // Pie chart data
-  const pieData = useMemo(() => {
-    return Object.entries(categoryTotals)
-      .filter(([, v]) => v > 0)
-      .map(([cat, value]) => ({
-        name: CATEGORY_LABELS[cat],
-        value: Math.round(value),
-        category: cat,
-      }));
-  }, [categoryTotals]);
-
-  // Top 10 stations
-  const topStations = useMemo(() => {
-    const stationTotals = new Map<string, { name: string; total: number; categories: Record<string, number> }>();
-    for (const r of filtered) {
-      if (!stationTotals.has(r.station_id)) {
-        stationTotals.set(r.station_id, { name: r.station_name, total: 0, categories: {} });
-      }
-      const entry = stationTotals.get(r.station_id)!;
-      entry.total += r.calculated_cost;
-      entry.categories[r.category] = (entry.categories[r.category] || 0) + r.calculated_cost;
-    }
-    return Array.from(stationTotals.values())
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10)
-      .map((s) => ({ name: s.name, ...s.categories, total: Math.round(s.total) }));
-  }, [filtered]);
-
-  // MoM change (compare last 2 months)
+  // MoM change
   const momChange = useMemo(() => {
     const months = Array.from(new Set(filtered.map((r) => r.month))).sort();
     if (months.length < 2) return null;
@@ -112,86 +67,125 @@ const DashboardPage: React.FC = () => {
     return (lastTotal - prevTotal) / prevTotal;
   }, [filtered]);
 
-  // Station type cost comparison (grouped bar, averaged per station)
-  const stationTypeCostData = useMemo(() => {
-    // Count stations per model
-    const modelStationCounts: Record<string, Set<string>> = {};
-    const modelCategoryCosts: Record<string, Record<string, number>> = {};
-
+  // === Pie: Cost by device type (station model) ===
+  const deviceTypePieData = useMemo(() => {
+    const modelTotals: Record<string, number> = {};
     for (const r of filtered) {
-      const model = r.station_model;
-      if (!modelStationCounts[model]) {
-        modelStationCounts[model] = new Set();
-        modelCategoryCosts[model] = {};
-      }
-      modelStationCounts[model].add(r.station_id);
-      modelCategoryCosts[model][r.category] = (modelCategoryCosts[model][r.category] || 0) + r.calculated_cost;
+      modelTotals[r.station_model] = (modelTotals[r.station_model] || 0) + r.calculated_cost;
     }
-
-    return Object.keys(modelCategoryCosts)
-      .sort()
-      .map((model) => {
-        const count = modelStationCounts[model].size || 1;
-        const entry: Record<string, string | number> = { model };
-        let total = 0;
-        for (const [cat] of Object.entries(CATEGORY_LABELS)) {
-          const avgCost = Math.round((modelCategoryCosts[model][cat] || 0) / count);
-          entry[cat] = avgCost;
-          total += avgCost;
-        }
-        entry.total = total;
-        return entry;
-      });
+    return Object.entries(modelTotals)
+      .filter(([, v]) => v > 0)
+      .map(([model, value]) => ({ name: model, value: Math.round(value), model }));
   }, [filtered]);
 
-  // Service age cost analysis
-  const serviceAgeCostData = useMemo(() => {
-    // Build a map: model -> serviceAgeMonth -> { totalCost, stationMonths }
-    const modelAgeMap: Record<string, Map<number, { totalCost: number; count: number }>> = {};
-    const stationMap = new Map(stations.map((s) => [s.id, s]));
-
+  // === Stacked area: Total cost trend by category ===
+  const totalTrendData = useMemo(() => {
+    const monthMap = new Map<string, Record<string, number>>();
     for (const r of filtered) {
-      const station = stationMap.get(r.station_id);
-      if (!station || !station.activation_date) continue;
+      if (!monthMap.has(r.month)) monthMap.set(r.month, {});
+      const entry = monthMap.get(r.month)!;
+      entry[r.category] = (entry[r.category] || 0) + r.calculated_cost;
+    }
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, cats]) => ({
+        month: formatMonth(month),
+        ...cats,
+      }));
+  }, [filtered]);
 
-      const activationMonth = dayjs(station.activation_date).startOf('month');
-      const recordMonth = dayjs(r.month);
-      const serviceAge = recordMonth.diff(activationMonth, 'month');
-      if (serviceAge < 0) continue;
+  // === Stacked area: Per-category trend by metric ===
+  const categoryMetricNames = useMemo(() => {
+    // Get unique metric names for the selected category
+    const names = new Set<string>();
+    for (const r of filtered) {
+      if (r.category === selectedCategory) names.add(r.metric_name);
+    }
+    return Array.from(names);
+  }, [filtered, selectedCategory]);
 
-      const model = r.station_model;
-      if (!modelAgeMap[model]) modelAgeMap[model] = new Map();
-      const ageMap = modelAgeMap[model];
-      if (!ageMap.has(serviceAge)) {
-        ageMap.set(serviceAge, { totalCost: 0, count: 0 });
-      }
-      const entry = ageMap.get(serviceAge)!;
+  const categoryTrendData = useMemo(() => {
+    const monthMap = new Map<string, Record<string, number>>();
+    for (const r of filtered) {
+      if (r.category !== selectedCategory) continue;
+      if (!monthMap.has(r.month)) monthMap.set(r.month, {});
+      const entry = monthMap.get(r.month)!;
+      entry[r.metric_name] = (entry[r.metric_name] || 0) + r.calculated_cost;
+    }
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, metrics]) => ({
+        month: formatMonth(month),
+        ...metrics,
+      }));
+  }, [filtered, selectedCategory]);
+
+  // Color palette for metrics within a category
+  const metricColors = useMemo(() => {
+    const palette = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96', '#fa8c16', '#a0d911', '#2f54eb', '#9254de', '#ff7a45'];
+    const map: Record<string, string> = {};
+    categoryMetricNames.forEach((name, i) => { map[name] = palette[i % palette.length]; });
+    return map;
+  }, [categoryMetricNames]);
+
+  // === MIS average cost per station ===
+  const misAvgData = useMemo(() => {
+    // Group by MIS: { mis -> { totalCost, stationSet } }
+    const misMap = new Map<number, { totalCost: number; stationIds: Set<string> }>();
+    for (const r of filtered) {
+      if (!misMap.has(r.mis)) misMap.set(r.mis, { totalCost: 0, stationIds: new Set() });
+      const entry = misMap.get(r.mis)!;
       entry.totalCost += r.calculated_cost;
-      entry.count += 1;
+      entry.stationIds.add(r.station_id);
+    }
+    return Array.from(misMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([mis, { totalCost, stationIds }]) => ({
+        mis,
+        avgCost: Math.round(totalCost / stationIds.size),
+      }));
+  }, [filtered]);
+
+  // === MIS cumulative cost per station ===
+  const misCumulativeData = useMemo(() => {
+    // For each station, calculate cumulative cost up to each MIS
+    // Then average across stations with same MIS
+    const stationMisCost = new Map<string, Map<number, number>>();
+    for (const r of filtered) {
+      if (!stationMisCost.has(r.station_id)) stationMisCost.set(r.station_id, new Map());
+      const misCosts = stationMisCost.get(r.station_id)!;
+      misCosts.set(r.mis, (misCosts.get(r.mis) || 0) + r.calculated_cost);
     }
 
-    // Flatten into array for chart, one data point per service age
-    // We want: { serviceAge, PS2, PS3, PS4 }
-    const allAges = new Set<number>();
-    for (const ageMap of Object.values(modelAgeMap)) {
-      for (const age of ageMap.keys()) allAges.add(age);
-    }
-    const sortedAges = Array.from(allAges).sort((a, b) => a - b);
-
-    return sortedAges.map((age) => {
-      const point: Record<string, number | string> = { serviceAge: age };
-      for (const model of ['PS2', 'PS3', 'PS4']) {
-        const entry = modelAgeMap[model]?.get(age);
-        if (entry && entry.count > 0) {
-          // Average cost per station-month at this service age
-          // count is number of cost records; we want average total cost
-          // Group by unique station to get station count
-          point[model] = Math.round(entry.totalCost / Math.max(1, entry.count) * 10);
-        }
+    // For each station, compute cumulative sums
+    const stationCumulative = new Map<string, Map<number, number>>();
+    for (const [stationId, misCosts] of stationMisCost.entries()) {
+      const sortedMis = Array.from(misCosts.keys()).sort((a, b) => a - b);
+      let cum = 0;
+      const cumMap = new Map<number, number>();
+      for (const mis of sortedMis) {
+        cum += misCosts.get(mis)!;
+        cumMap.set(mis, cum);
       }
-      return point;
+      stationCumulative.set(stationId, cumMap);
+    }
+
+    // Average cumulative cost across stations at each MIS
+    const allMis = new Set<number>();
+    for (const cumMap of stationCumulative.values()) {
+      for (const mis of cumMap.keys()) allMis.add(mis);
+    }
+
+    return Array.from(allMis).sort((a, b) => a - b).map((mis) => {
+      let sum = 0;
+      let count = 0;
+      for (const cumMap of stationCumulative.values()) {
+        const val = cumMap.get(mis);
+        if (val != null) { sum += val; count++; }
+      }
+      return { mis, cumAvgCost: count > 0 ? Math.round(sum / count) : 0 };
     });
-  }, [filtered, stations]);
+  }, [filtered]);
 
   return (
     <div>
@@ -250,9 +244,9 @@ const DashboardPage: React.FC = () => {
         </Space>
       </Card>
 
-      {/* Summary cards */}
+      {/* Summary cards: Total + 5 categories */}
       <Row gutter={12} style={{ marginBottom: 16 }}>
-        <Col span={6}>
+        <Col span={4}>
           <Card size="small" style={{ borderLeft: '3px solid #1890ff' }}>
             <Statistic
               title="总质量成本"
@@ -269,7 +263,7 @@ const DashboardPage: React.FC = () => {
           </Card>
         </Col>
         {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
-          <Col span={Math.floor(18 / Object.keys(CATEGORY_LABELS).length)} key={cat}>
+          <Col span={4} key={cat}>
             <Card size="small" style={{ borderLeft: `3px solid ${CATEGORY_COLORS[cat]}` }}>
               <Statistic
                 title={label}
@@ -283,39 +277,22 @@ const DashboardPage: React.FC = () => {
         ))}
       </Row>
 
-      {/* Charts row 1: trend + pie */}
+      {/* Row 1: Device type pie + Total cost trend (stacked area) */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={16}>
-          <Card title="成本趋势" size="small">
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={monthlyTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" style={{ fontSize: 11 }} />
-                <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
-                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-                <Legend />
-                <Line type="monotone" dataKey="total" name="总计" stroke="#333" strokeWidth={2} dot={{ r: 3 }} />
-                {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
-                  <Line key={cat} type="monotone" dataKey={cat} name={label} stroke={CATEGORY_COLORS[cat]} strokeWidth={1.5} dot={{ r: 2 }} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-        </Col>
         <Col span={8}>
-          <Card title="成本占比" size="small">
+          <Card title="设备类型成本占比" size="small">
             <ResponsiveContainer width="100%" height={320}>
               <PieChart>
                 <Pie
-                  data={pieData}
+                  data={deviceTypePieData}
                   cx="50%"
                   cy="50%"
                   outerRadius={100}
                   dataKey="value"
                   label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(1)}%`}
                 >
-                  {pieData.map((entry) => (
-                    <Cell key={entry.category} fill={CATEGORY_COLORS[entry.category]} />
+                  {deviceTypePieData.map((entry) => (
+                    <Cell key={entry.model} fill={STATION_MODEL_COLORS[entry.model]} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v) => formatCurrency(Number(v))} />
@@ -323,84 +300,121 @@ const DashboardPage: React.FC = () => {
             </ResponsiveContainer>
           </Card>
         </Col>
-      </Row>
-
-      {/* New charts for the boss */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        {/* Station type cost comparison */}
-        <Col span={12}>
-          <Card title="站型成本对比（单站均摊）" size="small">
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={stationTypeCostData} margin={{ bottom: 20 }}>
+        <Col span={16}>
+          <Card title="总成本趋势（按成本类型堆叠）" size="small">
+            <ResponsiveContainer width="100%" height={320}>
+              <AreaChart data={totalTrendData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="model" style={{ fontSize: 12 }} />
+                <XAxis dataKey="month" style={{ fontSize: 11 }} />
                 <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
                 <Tooltip formatter={(v) => formatCurrency(Number(v))} />
                 <Legend />
                 {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
-                  <Bar key={cat} dataKey={cat} name={label} fill={CATEGORY_COLORS[cat]} />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              各站型总成本按站数均分，便于公平对比不同站型的单站成本结构
-            </Text>
-          </Card>
-        </Col>
-
-        {/* Service age cost analysis */}
-        <Col span={12}>
-          <Card title="服役月龄成本趋势" size="small">
-            <ResponsiveContainer width="100%" height={350}>
-              <ComposedChart data={serviceAgeCostData} margin={{ bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="serviceAge"
-                  style={{ fontSize: 11 }}
-                  label={{ value: '服役月数', position: 'insideBottom', offset: -10, style: { fontSize: 11 } }}
-                />
-                <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
-                <Tooltip
-                  formatter={(v) => formatCurrency(Number(v))}
-                  labelFormatter={(label) => `服役 ${label} 个月`}
-                />
-                <Legend />
-                {(['PS2', 'PS3', 'PS4'] as const).map((model) => (
-                  <Line
-                    key={model}
+                  <Area
+                    key={cat}
                     type="monotone"
-                    dataKey={model}
-                    name={model}
-                    stroke={STATION_MODEL_COLORS[model]}
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    connectNulls
+                    dataKey={cat}
+                    name={label}
+                    stackId="1"
+                    fill={CATEGORY_COLORS[cat]}
+                    stroke={CATEGORY_COLORS[cat]}
+                    fillOpacity={0.7}
                   />
                 ))}
-              </ComposedChart>
+              </AreaChart>
             </ResponsiveContainer>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              按服役月龄展示各站型平均质量成本变化，揭示设备老化对成本的影响
-            </Text>
           </Card>
         </Col>
       </Row>
 
-      {/* Top 10 stations */}
-      <Card title="换电站成本 TOP 10" size="small" style={{ marginBottom: 16 }}>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={topStations} layout="vertical" margin={{ left: 100 }}>
+      {/* Row 2: Per-category trend (stacked area by metric) */}
+      <Card
+        title={
+          <Space>
+            <span>成本类型明细趋势（按指标堆叠）</span>
+            <Select
+              value={selectedCategory}
+              onChange={setSelectedCategory}
+              style={{ width: 140 }}
+              options={Object.entries(CATEGORY_LABELS).map(([k, v]) => ({ label: v, value: k }))}
+              size="small"
+            />
+          </Space>
+        }
+        size="small"
+        style={{ marginBottom: 16 }}
+      >
+        <ResponsiveContainer width="100%" height={320}>
+          <AreaChart data={categoryTrendData}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" tickFormatter={(v) => formatNumber(v)} style={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" style={{ fontSize: 11 }} width={100} />
+            <XAxis dataKey="month" style={{ fontSize: 11 }} />
+            <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
             <Tooltip formatter={(v) => formatCurrency(Number(v))} />
             <Legend />
-            {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
-              <Bar key={cat} dataKey={cat} name={label} stackId="a" fill={CATEGORY_COLORS[cat]} />
+            {categoryMetricNames.map((name) => (
+              <Area
+                key={name}
+                type="monotone"
+                dataKey={name}
+                stackId="1"
+                fill={metricColors[name]}
+                stroke={metricColors[name]}
+                fillOpacity={0.7}
+              />
             ))}
-          </BarChart>
+          </AreaChart>
         </ResponsiveContainer>
       </Card>
+
+      {/* Row 3: MIS charts */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={12}>
+          <Card title="MIS 单站平均成本" size="small">
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart data={misAvgData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="mis"
+                  style={{ fontSize: 11 }}
+                  label={{ value: 'MIS（月）', position: 'insideBottom', offset: -5, style: { fontSize: 11 } }}
+                />
+                <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
+                <Tooltip
+                  formatter={(v) => formatCurrency(Number(v))}
+                  labelFormatter={(label) => `MIS ${label}`}
+                />
+                <Line type="monotone" dataKey="avgCost" name="单站平均成本" stroke="#1890ff" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              MIS 相同的所有站点成本总和 / 站点数，反映单站在每个服役月龄的平均成本水平
+            </Text>
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card title="MIS 单站累计成本" size="small">
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart data={misCumulativeData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="mis"
+                  style={{ fontSize: 11 }}
+                  label={{ value: 'MIS（月）', position: 'insideBottom', offset: -5, style: { fontSize: 11 } }}
+                />
+                <YAxis style={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
+                <Tooltip
+                  formatter={(v) => formatCurrency(Number(v))}
+                  labelFormatter={(label) => `MIS ${label}`}
+                />
+                <Line type="monotone" dataKey="cumAvgCost" name="单站累计成本" stroke="#f5222d" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              每个站从 MIS=1 到当前 MIS 的成本累计值，再按站求平均，反映设备生命周期总投入
+            </Text>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };

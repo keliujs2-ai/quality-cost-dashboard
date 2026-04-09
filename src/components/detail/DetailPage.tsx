@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Table, Select, DatePicker, Button, Tag, Space, Card, Row, Col, Statistic } from 'antd';
+import { Table, Select, DatePicker, Button, Tag, Space, Card, Row, Col, Statistic, InputNumber } from 'antd';
 // icons available for future use
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -10,6 +10,14 @@ import type { CostRecord, CostCategory, StationModel } from '../../data/types';
 
 const { RangePicker } = DatePicker;
 
+const MIS_PRESETS = [
+  { label: '3个月', value: 3 },
+  { label: '半年', value: 6 },
+  { label: '1年', value: 12 },
+  { label: '3年', value: 36 },
+  { label: '5年', value: 60 },
+];
+
 const DetailPage: React.FC = () => {
   const { costRecords, stations } = useQualityCost();
 
@@ -18,6 +26,8 @@ const DetailPage: React.FC = () => {
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<StationModel[]>([]);
   const [dateRange, setDateRange] = useState<[string, string]>(['2025-04', '2026-03']);
+  const [misMin, setMisMin] = useState<number | null>(null);
+  const [misMax, setMisMax] = useState<number | null>(null);
 
   const regions = useMemo(() => [...new Set(stations.map((s) => s.region))], [stations]);
 
@@ -28,9 +38,11 @@ const DetailPage: React.FC = () => {
       if (selectedRegions.length > 0 && !selectedRegions.includes(r.region)) return false;
       if (selectedTypes.length > 0 && !selectedTypes.includes(r.station_model)) return false;
       if (r.month < dateRange[0] || r.month > dateRange[1]) return false;
+      if (misMin != null && r.mis < misMin) return false;
+      if (misMax != null && r.mis > misMax) return false;
       return true;
     });
-  }, [costRecords, selectedStations, selectedCategories, selectedRegions, selectedTypes, dateRange]);
+  }, [costRecords, selectedStations, selectedCategories, selectedRegions, selectedTypes, dateRange, misMin, misMax]);
 
   const totalCost = useMemo(() => filtered.reduce((sum, r) => sum + r.calculated_cost, 0), [filtered]);
 
@@ -90,6 +102,15 @@ const DetailPage: React.FC = () => {
       align: 'right',
       render: (v: number) => formatCurrency(v),
       sorter: (a, b) => a.calculated_cost - b.calculated_cost,
+    },
+    {
+      title: 'MIS',
+      dataIndex: 'mis',
+      key: 'mis',
+      width: 70,
+      align: 'right',
+      sorter: (a, b) => a.mis - b.mis,
+      render: (v: number) => `${v}`,
     },
     {
       title: '区域公司',
@@ -169,6 +190,39 @@ const DetailPage: React.FC = () => {
               }}
             />
           </div>
+          <div>
+            <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>MIS 范围</div>
+            <Space size={4}>
+              <InputNumber
+                placeholder="最小"
+                value={misMin}
+                min={1}
+                onChange={(v) => setMisMin(v)}
+                style={{ width: 72 }}
+                size="middle"
+              />
+              <span style={{ color: '#999' }}>-</span>
+              <InputNumber
+                placeholder="最大"
+                value={misMax}
+                min={1}
+                onChange={(v) => setMisMax(v)}
+                style={{ width: 72 }}
+                size="middle"
+              />
+              {MIS_PRESETS.map((p) => (
+                <Button
+                  key={p.value}
+                  size="small"
+                  type={misMin === 1 && misMax === p.value ? 'primary' : 'default'}
+                  onClick={() => { setMisMin(1); setMisMax(p.value); }}
+                  style={{ fontSize: 12, padding: '0 6px' }}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </Space>
+          </div>
           <div style={{ marginTop: 18 }}>
             <Button
               onClick={() => {
@@ -177,6 +231,8 @@ const DetailPage: React.FC = () => {
                 setSelectedRegions([]);
                 setSelectedTypes([]);
                 setDateRange(['2025-04', '2026-03']);
+                setMisMin(null);
+                setMisMax(null);
               }}
             >
               重置

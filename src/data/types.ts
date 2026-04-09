@@ -73,6 +73,7 @@ export interface CostRecord {
   region: string;
   city: string;
   month: string;
+  mis: number; // Months In Service: 成本月份 - 激活月份 + 1
   category: CostCategory;
   metric_id: string;
   metric_name: string;
