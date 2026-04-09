@@ -21,7 +21,7 @@ const STATION_MODEL_COLORS: Record<string, string> = {
 };
 
 const DashboardPage: React.FC = () => {
-  const { costRecords, stations, dashboardViews, metricDefinitions } = useQualityCost();
+  const { costRecords, stations, dashboardViews } = useQualityCost();
   const [activeViewId, setActiveViewId] = useState(dashboardViews[0]?.id || '');
   const [selectedStations, setSelectedStations] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<StationModel[]>([]);
