@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Row, Col, Collapse, List, Tag, Card, InputNumber, Form, Switch, Typography, Empty, Alert, Space, message, Button, Modal, Input, Select, Popconfirm, Divider } from 'antd';
-import { LockOutlined, ExclamationCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, EditOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { LockOutlined, ExclamationCircleOutlined, SettingOutlined, PlusOutlined, DeleteOutlined, EditOutlined, MinusCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useQualityCost } from '../../context/QualityCostContext';
 import { CATEGORY_LABELS, CATEGORY_COLORS, FORMULA_TYPE_LABELS, WAREHOUSE_LAYERS } from '../../data/constants';
 import type { MetricDefinition, SparePartSubItem, FormulaType, DataSourceConfig } from '../../data/types';
@@ -23,7 +23,7 @@ function groupByCategory(metrics: MetricDefinition[]): Record<string, MetricDefi
 // ==================== Main Page ====================
 
 const MetricsPage: React.FC = () => {
-  const { metricDefinitions, updateMetricDefinition, addMetricDefinition, deleteMetricDefinition, tableSchemas } = useQualityCost();
+  const { metricDefinitions, updateMetricDefinition, addMetricDefinition, deleteMetricDefinition, tableSchemas, triggerRecalculate } = useQualityCost();
   const [selectedMetricId, setSelectedMetricId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingBasicInfo, setEditingBasicInfo] = useState(false);
@@ -111,6 +111,7 @@ const MetricsPage: React.FC = () => {
             <MetricConfigPanel
               metric={selectedMetric}
               onUpdate={updateMetricDefinition}
+              onRecalculate={triggerRecalculate}
               tableSchemas={tableSchemas}
               onEditBasicInfo={() => setEditingBasicInfo(true)}
             />
@@ -168,16 +169,41 @@ function FormulaPreview({ formula }: { formula: string }) {
 function MetricConfigPanel({
   metric,
   onUpdate,
+  onRecalculate,
   tableSchemas,
   onEditBasicInfo,
 }: {
   metric: MetricDefinition;
   onUpdate: (id: string, updates: Partial<MetricDefinition>) => void;
+  onRecalculate: () => void;
   tableSchemas: { table_name: string; warehouse_layer: string }[];
   onEditBasicInfo: () => void;
 }) {
   const [messageApi, contextHolder] = message.useMessage();
+  const [recalculating, setRecalculating] = useState(false);
+  const recalcCooldownRef = useRef(false);
   void tableSchemas;
+
+  const handleRecalculate = useCallback(() => {
+    if (recalcCooldownRef.current || recalculating) {
+      messageApi.warning('正在重算中，请稍后再试');
+      return;
+    }
+    setRecalculating(true);
+    recalcCooldownRef.current = true;
+    messageApi.loading({ content: `正在重算「${metric.name_zh}」当月数据...`, key: 'recalc', duration: 0 });
+
+    // Simulate recalculation delay (1.5-3s)
+    setTimeout(() => {
+      onRecalculate();
+      setRecalculating(false);
+      messageApi.success({ content: `「${metric.name_zh}」当月数据重算完成`, key: 'recalc', duration: 2 });
+      // Cooldown: prevent re-trigger for 3 seconds after completion
+      setTimeout(() => {
+        recalcCooldownRef.current = false;
+      }, 3000);
+    }, 1500 + Math.random() * 1500);
+  }, [metric.name_zh, onRecalculate, recalculating, messageApi]);
 
   if (metric.status === 'not_configured') {
     return (
@@ -247,7 +273,20 @@ function MetricConfigPanel({
       }
       size="small"
       style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}
-      extra={<Button size="small" icon={<EditOutlined />} onClick={onEditBasicInfo}>编辑基本信息</Button>}
+      extra={
+        <Space>
+          <Button
+            size="small"
+            icon={<ThunderboltOutlined />}
+            onClick={handleRecalculate}
+            loading={recalculating}
+            disabled={recalculating}
+          >
+            {recalculating ? '重算中...' : '重算当月数据'}
+          </Button>
+          <Button size="small" icon={<EditOutlined />} onClick={onEditBasicInfo}>编辑基本信息</Button>
+        </Space>
+      }
     >
       {contextHolder}
 

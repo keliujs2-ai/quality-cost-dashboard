@@ -30,6 +30,7 @@ interface QualityCostContextType {
   addTableSchema: (schema: TableSchema) => void;
   updateTableSchema: (layer: string, tableName: string, updates: Partial<TableSchema>) => void;
   deleteTableSchema: (layer: string, tableName: string) => void;
+  triggerRecalculate: () => void;
   filteredRecords: CostRecord[];
   dataVersion: number;
 }
@@ -121,9 +122,10 @@ export function QualityCostProvider({ children }: { children: React.ReactNode })
     setMetricDefinitions((prev) =>
       prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
     );
-    if (updates.status || updates.formula) {
-      setDataVersion((v) => v + 1);
-    }
+  }, []);
+
+  const triggerRecalculate = useCallback(() => {
+    setDataVersion((v) => v + 1);
   }, []);
 
   const deleteMetricDefinition = useCallback((id: string) => {
@@ -163,12 +165,13 @@ export function QualityCostProvider({ children }: { children: React.ReactNode })
       addMetricDefinition, updateMetricDefinition, deleteMetricDefinition,
       addDashboardView, updateDashboardView, deleteDashboardView,
       addTableSchema, updateTableSchema, deleteTableSchema,
+      triggerRecalculate,
       filteredRecords, dataVersion,
     }),
     [metricDefinitions, costRecords, dashboardViews, tableSchemas, filters, filteredRecords, dataVersion,
      addMetricDefinition, updateMetricDefinition, deleteMetricDefinition,
      addDashboardView, updateDashboardView, deleteDashboardView,
-     addTableSchema, updateTableSchema, deleteTableSchema],
+     addTableSchema, updateTableSchema, deleteTableSchema, triggerRecalculate],
   );
 
   return <QualityCostContext.Provider value={value}>{children}</QualityCostContext.Provider>;
