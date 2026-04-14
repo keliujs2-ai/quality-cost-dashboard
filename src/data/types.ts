@@ -31,7 +31,7 @@ export interface FormulaConfig {
   type: FormulaType;
   unit_cost?: number;         // for count_times_unit: cost per count
   hourly_rate?: number;       // for hours_times_rate: cost per hour
-  value_field?: string;       // for hours_times_rate: which field to sum
+  value_field?: string;       // for hours_times_rate / subtraction: which field to sum
   sub_items?: SparePartSubItem[];  // for checkbox_sum: configurable sub-items
   hardcoded_rates?: Record<string, number>;  // for hardcoded: rates per station model
   description?: string;

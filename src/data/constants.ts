@@ -195,6 +195,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     },
     formula: {
       type: 'subtraction',
+      value_field: 'cost_estimation',
       raw_value_name: '物料费用',
       raw_value_unit: '元',
       description: '按站按月汇总cost_estimation',
@@ -327,6 +328,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     },
     formula: {
       type: 'subtraction',
+      value_field: 'total_repair_cost',
       raw_value_name: '事故费用',
       raw_value_unit: '元',
       description: "筛选accident_resp='1'（我方责任），汇总fee_repair_swap + fee_repair_user",
@@ -345,6 +347,7 @@ export const ALL_METRIC_DEFINITIONS: MetricDefinition[] = [
     },
     formula: {
       type: 'subtraction',
+      value_field: 'total_damage_cost',
       raw_value_name: '损伤费用',
       raw_value_unit: '元',
       description: '按站名按月汇总 repair_cost + forklift_logistics_cost + labor_cost',

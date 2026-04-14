@@ -417,6 +417,13 @@ function MetricConfigPanel({
         {/* subtraction */}
         {formula.type === 'subtraction' && (
           <Form layout="vertical" size="small">
+            <Form.Item label="汇总字段 (value_field)">
+              <Input
+                value={formula.value_field || ''}
+                onChange={(e) => handleSave('value_field', e.target.value)}
+                placeholder="数据源中需要 SUM 的金额字段名"
+              />
+            </Form.Item>
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item label="原始值名称 (raw_value_name)">
@@ -437,7 +444,7 @@ function MetricConfigPanel({
                 </Form.Item>
               </Col>
             </Row>
-            <Alert message="该指标直接从数据源汇总金额，无需额外参数配置" type="info" showIcon />
+            <FormulaPreview formula={`SUM(${formula.value_field || '?'}) → ${formula.raw_value_name || '金额'}（${formula.raw_value_unit || '元'}）`} />
           </Form>
         )}
 
@@ -590,6 +597,7 @@ function AddMetricModal({
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'subtraction':
+          formulaConfig.value_field = values.value_field || '';
           formulaConfig.raw_value_name = values.raw_value_name || '';
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
@@ -768,18 +776,23 @@ function AddMetricModal({
 
         {/* subtraction params */}
         {formulaType === 'subtraction' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="raw_value_name" label="原始值名称">
-                <Input placeholder="例: 费用" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="raw_value_unit" label="原始值单位">
-                <Input placeholder="例: 元" />
-              </Form.Item>
-            </Col>
-          </Row>
+          <>
+            <Form.Item name="value_field" label="汇总字段">
+              <Input placeholder="数据源中需要 SUM 的金额字段名" />
+            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 费用" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 元" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
         )}
 
         {/* checkbox_sum params */}
@@ -887,6 +900,7 @@ function EditBasicInfoModal({
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
         case 'subtraction':
+          formulaConfig.value_field = values.value_field ?? metric.formula.value_field ?? '';
           formulaConfig.raw_value_name = values.raw_value_name || '';
           formulaConfig.raw_value_unit = values.raw_value_unit || '';
           break;
@@ -1068,18 +1082,23 @@ function EditBasicInfoModal({
 
         {/* subtraction */}
         {formulaType === 'subtraction' && (
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="raw_value_name" label="原始值名称">
-                <Input placeholder="例: 费用" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="raw_value_unit" label="原始值单位">
-                <Input placeholder="例: 元" />
-              </Form.Item>
-            </Col>
-          </Row>
+          <>
+            <Form.Item name="value_field" label="汇总字段">
+              <Input placeholder="数据源中需要 SUM 的金额字段名" />
+            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item name="raw_value_name" label="原始值名称">
+                  <Input placeholder="例: 费用" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item name="raw_value_unit" label="原始值单位">
+                  <Input placeholder="例: 元" />
+                </Form.Item>
+              </Col>
+            </Row>
+          </>
         )}
 
         {/* checkbox_sum */}
